@@ -16,6 +16,11 @@ To use this javascript install Tampermonkey or a similar tool to your browser an
 1. [x] Fix recursion medal breaking next medal highlighting
 2. [x] Add new medal tier for Onyx with wings
 3. [x] Add new medal tier for Onyx with multiple wings
+4. [ ] Add functionality to extrapolate onyx with multiple wings in the Highcharts graphs
+5. [ ] Remove old unused medals from highcharts and prediction table
+6. [ ] Fix some medals not getting a label when selected on highcharts
+7. [ ] Make medal selection better on highcharts
+8. [ ] Make prediction table highlights match the site style
 
 # Version History
 
