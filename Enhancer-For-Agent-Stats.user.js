@@ -284,7 +284,7 @@
             th.style.verticalAlign = 'middle';
             th.innerHTML = '<div style="display: inline-flex; align-items: center; justify-content: center; gap: 2px; max-width: 100%; vertical-align: middle;">' +
                 '<a href="#predictionTable" style="text-decoration: none; cursor: pointer; display: inline-flex; align-items: center;">' +
-                    '<div class="recursion-frame" style="display: inline-block; vertical-align: middle;">' +
+                    '<div class="recursion-frame" style="display: inline-block; vertical-align: middle; width:48px;">' +
                         '<img alt="black" src="/img/black.png" height="32" width="32">' +
                     '</div>' +
                 '</a>' +
