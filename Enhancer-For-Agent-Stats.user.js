@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Enhancer for Agent Stats
 // @namespace    http://tampermonkey.net/
-// @version      0.3
+// @version      0.4
 // @description  This fixes and enhances functionality of Agent Stats https://www.agent-stats.com/
 // @author       ReBootYourMind
 // @match        https://www.agent-stats.com/
@@ -171,6 +171,89 @@
         return { baseDate: bestBaseDate, windowDays: bestWindowDays };
     }
 
+    function getRowRecursionSortKey(row) {
+        const cell = row.querySelector('td[data-enhancer-col="recursion"]');
+        if (!cell) return { hasDate: false, dateStr: '', short: Infinity };
+
+        const dateMatch = cell.innerText.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+        const shortMatch = cell.innerText.match(/([\d,]+)\s+short/);
+        const shortVal = shortMatch ? parseFloat(shortMatch[1].replace(/,/g, '')) : Infinity;
+
+        if (dateMatch) {
+            return {
+                hasDate: true,
+                dateStr: dateMatch[1],
+                short: shortVal
+            };
+        }
+        return {
+            hasDate: false,
+            dateStr: '',
+            short: shortVal
+        };
+    }
+
+    function toggleRecursionSort(table, th) {
+        const currentOrder = th.dataset.sortOrder;
+        const newOrder = currentOrder === 'asc' ? 'desc' : 'asc';
+        th.dataset.sortOrder = newOrder;
+
+        // Clear sort arrows from other column headers
+        table.querySelectorAll('thead th').forEach(otherTh => {
+            if (otherTh !== th) {
+                delete otherTh.dataset.sortOrder;
+                if (otherTh.childNodes) {
+                    otherTh.childNodes.forEach(node => {
+                        if (node.nodeType === Node.TEXT_NODE && (node.textContent.includes('↑') || node.textContent.includes('↓'))) {
+                            node.textContent = node.textContent.replace(/[↑↓]/g, '');
+                        }
+                    });
+                }
+                const arrow = otherTh.querySelector('.enhancer-sort-arrow');
+                if (arrow) arrow.textContent = '';
+            }
+        });
+
+        // Update arrow in recursion th
+        const arrowSpan = th.querySelector('.enhancer-sort-arrow');
+        if (arrowSpan) {
+            arrowSpan.textContent = newOrder === 'asc' ? ' ↑' : ' ↓';
+        }
+
+        // Sort rows within each tbody
+        const tbodies = table.querySelectorAll('tbody');
+        tbodies.forEach(tbody => {
+            const rows = Array.from(tbody.querySelectorAll('tr')).filter(row => {
+                return !row.querySelector('th') && row.cells.length >= 11;
+            });
+
+            rows.sort((rowA, rowB) => {
+                const keyA = getRowRecursionSortKey(rowA);
+                const keyB = getRowRecursionSortKey(rowB);
+
+                if (newOrder === 'asc') {
+                    if (keyA.hasDate && keyB.hasDate) {
+                        const d = keyA.dateStr.localeCompare(keyB.dateStr);
+                        return d !== 0 ? d : keyA.short - keyB.short;
+                    }
+                    if (keyA.hasDate) return -1;
+                    if (keyB.hasDate) return 1;
+                    return keyA.short - keyB.short;
+                } else {
+                    if (keyA.hasDate && keyB.hasDate) {
+                        const d = keyB.dateStr.localeCompare(keyA.dateStr);
+                        return d !== 0 ? d : keyB.short - keyA.short;
+                    }
+                    if (keyA.hasDate) return -1;
+                    if (keyB.hasDate) return 1;
+                    return keyB.short - keyA.short;
+                }
+            });
+
+            rows.forEach(r => tbody.appendChild(r));
+        });
+    }
+
     function addRecursionPredictionColumn(table) {
         if (!table) return false;
 
@@ -178,7 +261,8 @@
         if (!theadRow) return false;
 
         // Ensure column header is added once
-        if (!table.querySelector('th[data-enhancer-col="recursion"]')) {
+        let th = table.querySelector('th[data-enhancer-col="recursion"]');
+        if (!th) {
             const colgroup = table.querySelector('colgroup');
             if (colgroup && !colgroup.querySelector('col[data-enhancer-col="recursion"]')) {
                 const col = document.createElement('col');
@@ -186,10 +270,17 @@
                 colgroup.appendChild(col);
             }
 
-            const th = document.createElement('th');
+            th = document.createElement('th');
             th.dataset.enhancerCol = 'recursion';
-            th.title = 'Next Black Multiple (Recursion)';
-            th.innerHTML = '<div class="recursion-frame"><img alt="black" src="/img/black.png" height="32" width="32"></div>';
+            th.title = 'Sort by Next Black Multiple (Recursion)';
+            th.style.cursor = 'pointer';
+            th.innerHTML = '<a href="#predictionTable" style="text-decoration: none; cursor: pointer;"><div class="recursion-frame" style="display: inline-block; vertical-align: middle;"><img alt="black" src="/img/black.png" height="32" width="32"></div></a> <span class="enhancer-sort-arrow" style="vertical-align: middle;"></span>';
+
+            th.addEventListener('click', (e) => {
+                e.preventDefault();
+                toggleRecursionSort(table, th);
+            });
+
             theadRow.appendChild(th);
         }
 
