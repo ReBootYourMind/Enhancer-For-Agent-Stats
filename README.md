@@ -22,6 +22,7 @@ To use this javascript install Tampermonkey or a similar tool to your browser an
 ## 0.4
 
 - Added client-side sorting for the Recursion Prediction Column, toggling between ascending and descending order on header click, with active sort arrow indicators.
+- Fixed sort indicator arrow positioning and cell containment so arrows stay neatly inside the header cell without overlapping table borders.
 
 ## 0.3
 

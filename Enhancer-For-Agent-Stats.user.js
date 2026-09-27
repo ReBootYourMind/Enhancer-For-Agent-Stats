@@ -217,7 +217,7 @@
         // Update arrow in recursion th
         const arrowSpan = th.querySelector('.enhancer-sort-arrow');
         if (arrowSpan) {
-            arrowSpan.textContent = newOrder === 'asc' ? ' ↑' : ' ↓';
+            arrowSpan.textContent = newOrder === 'asc' ? '↑' : '↓';
         }
 
         // Sort rows within each tbody
@@ -267,6 +267,8 @@
             if (colgroup && !colgroup.querySelector('col[data-enhancer-col="recursion"]')) {
                 const col = document.createElement('col');
                 col.dataset.enhancerCol = 'recursion';
+                col.style.width = '85px';
+                col.style.minWidth = '85px';
                 colgroup.appendChild(col);
             }
 
@@ -274,7 +276,20 @@
             th.dataset.enhancerCol = 'recursion';
             th.title = 'Sort by Next Black Multiple (Recursion)';
             th.style.cursor = 'pointer';
-            th.innerHTML = '<a href="#predictionTable" style="text-decoration: none; cursor: pointer;"><div class="recursion-frame" style="display: inline-block; vertical-align: middle;"><img alt="black" src="/img/black.png" height="32" width="32"></div></a> <span class="enhancer-sort-arrow" style="vertical-align: middle;"></span>';
+            th.style.whiteSpace = 'nowrap';
+            th.style.minWidth = '85px';
+            th.style.padding = '8px 4px';
+            th.style.boxSizing = 'border-box';
+            th.style.textAlign = 'center';
+            th.style.verticalAlign = 'middle';
+            th.innerHTML = '<div style="display: inline-flex; align-items: center; justify-content: center; gap: 2px; max-width: 100%; vertical-align: middle;">' +
+                '<a href="#predictionTable" style="text-decoration: none; cursor: pointer; display: inline-flex; align-items: center;">' +
+                    '<div class="recursion-frame" style="display: inline-block; vertical-align: middle;">' +
+                        '<img alt="black" src="/img/black.png" height="32" width="32">' +
+                    '</div>' +
+                '</a>' +
+                '<span class="enhancer-sort-arrow" style="display: inline-block; font-size: 13px; line-height: 1; user-select: none;"></span>' +
+            '</div>';
 
             th.addEventListener('click', (e) => {
                 e.preventDefault();
@@ -347,6 +362,9 @@
 
             const td = document.createElement('td');
             td.dataset.enhancerCol = 'recursion';
+            td.style.whiteSpace = 'nowrap';
+            td.style.padding = '8px 4px';
+            td.style.boxSizing = 'border-box';
             if (nextMultiple) {
                 td.dataset.nextMultiple = String(nextMultiple);
             }
