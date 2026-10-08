@@ -10,19 +10,40 @@ To use this javascript install Tampermonkey or a similar tool to your browser an
 - **Prediction Table Highlighting**: Fixes next medal prediction highlighting on `table#predictionTable` by identifying the single earliest upcoming medal for each medal tier column, while correctly handling recursion badges, missing projections, and `N/A` values.
 - **Recursion Black Medal Predictions**: Adds a new column to the prediction table calculating when the next multiple of a black medal (black with recursion-frame) will be earned, and highlights the earliest upcoming recursion medal.
 - **Client-Side Recursion Sorting**: Clicking the header image of the Recursion Prediction Column sorts rows in ascending order (earliest projected date first), and clicking again switches to descending order (and back), with an active sort indicator arrow (`↑` or `↓`).
+- **Remove Expired Event Medals**: Automatically removes deprecated and expired event medals (`cryptic_memories_op`, `operation_chronos`, `prime_challenge`) from the prediction table and the Highcharts graph so they do not clutter projections or skew medal highlights.
+- **Highcharts Multiple Onyx Extrapolations**: Extends the site's Highcharts graph extrapolation to calculate and display projections for multiples of Black/Onyx medals (e.g. 2x, 3x, etc.) based on user progress in the selected time window.
 
 # TODO:
 
 1. [x] Fix recursion medal breaking next medal highlighting
 2. [x] Add new medal tier for Onyx with wings
 3. [x] Add new medal tier for Onyx with multiple wings
-4. [ ] Add functionality to extrapolate onyx with multiple wings in the Highcharts graphs
-5. [ ] Remove old unused medals from highcharts and prediction table
-6. [ ] Fix some medals not getting a label when selected on highcharts
-7. [ ] Make medal selection better on highcharts
-8. [ ] Make prediction table highlights match the site style
+4. [x] Make prediction table highlights match the site style
+5. [x] Remove old unused medals from prediction table
+6. [x] Add functionality to extrapolate onyx with multiple wings in the Highcharts graphs
+7. [x] Remove old unused medals from highcharts
+8. [ ] Fix some medals not getting a label when selected on highcharts
+9. [ ] Make medal selection better on highcharts
+10. [ ] Change unavailable recursion predictions from "-" to "N/A"
 
 # Version History
+
+## 0.8
+
+- Removed expired and unused event medals (`cryptic_memories_op`, `operation_chronos`, `prime_challenge`) from the Highcharts graph and legend.
+
+## 0.7
+
+- Added support for multiple Black/Onyx extrapolations in the Highcharts graphs, projecting upcoming multiples (2x, 3x, etc.) based on user activity within the selected time window.
+
+## 0.6
+
+- Removed expired and unused event medals (`cryptic_memories_op`, `operation_chronos`, `prime_challenge`) from the prediction table.
+
+## 0.5
+
+- Updated prediction table highlights to match the native site style (`class="highlight"`) instead of custom inline styles.
+- Ensured any previous or server-rendered highlights are cleared when recalculating earliest upcoming medals.
 
 ## 0.4
 

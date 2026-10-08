@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Enhancer for Agent Stats
 // @namespace    http://tampermonkey.net/
-// @version      0.4
+// @version      0.8
 // @description  This fixes and enhances functionality of Agent Stats https://www.agent-stats.com/
 // @author       ReBootYourMind
 // @match        https://www.agent-stats.com/
@@ -87,6 +87,21 @@
         if (!medalName) return null;
         const norm = normalizeMedalName(medalName);
         return NORMALIZED_REQUIREMENTS[norm] ?? BLACK_MEDAL_REQUIREMENTS[medalName.trim()] ?? null;
+    }
+
+    const UNUSED_MEDALS = [
+        'cryptic_memories_op',
+        'operation_chronos',
+        'prime_challenge'
+    ];
+
+    const NORMALIZED_UNUSED_MEDALS = new Set(
+        UNUSED_MEDALS.map(name => normalizeMedalName(name))
+    );
+
+    function isUnusedMedal(medalName) {
+        if (!medalName) return false;
+        return NORMALIZED_UNUSED_MEDALS.has(normalizeMedalName(medalName));
     }
 
     // Extrapolate the base date and interval window (in days) using existing server-generated predictions
@@ -252,6 +267,29 @@
 
             rows.forEach(r => tbody.appendChild(r));
         });
+
+        highlightNextMedals(table);
+    }
+
+    function removeUnusedMedals(table = document.querySelector('table#predictionTable')) {
+        if (!table) return false;
+
+        const rows = Array.from(table.querySelectorAll('tbody tr')).filter(row => {
+            return row.cells.length >= 1 && !row.querySelector('th');
+        });
+
+        for (const row of rows) {
+            const rawName = row.cells[0].childNodes[0]?.textContent?.trim() || row.cells[0].innerText.split('\n')[0].trim();
+            if (isUnusedMedal(rawName)) {
+                const tbody = row.parentElement;
+                row.remove();
+                if (tbody && tbody.tagName.toLowerCase() === 'tbody' && tbody.children.length === 0) {
+                    tbody.remove();
+                }
+            }
+        }
+
+        return true;
     }
 
     function addRecursionPredictionColumn(table) {
@@ -387,8 +425,9 @@
 
         if (!rows.length) return false;
 
-        // Clear any previous highlights applied by this enhancer
-        table.querySelectorAll('td[data-enhancer-highlight="true"]').forEach(td => {
+        // Clear any previous highlights (both server-rendered and enhancer-applied)
+        table.querySelectorAll('tbody td.highlight, tbody td[data-enhancer-highlight="true"]').forEach(td => {
+            td.classList.remove('highlight');
             td.style.backgroundColor = '';
             td.style.fontWeight = '';
             delete td.dataset.enhancerHighlight;
@@ -436,38 +475,254 @@
                 }
             }
 
-            // Highlight the single earliest upcoming medal for this tier column
+            // Highlight the single earliest upcoming medal for this tier column matching site style
             if (targetCell) {
-                targetCell.style.backgroundColor = 'rgba(253, 215, 60, 0.2)';
-                targetCell.style.fontWeight = 'bold';
-                targetCell.dataset.enhancerHighlight = 'true';
+                targetCell.classList.add('highlight');
             }
         }
 
         return true;
     }
 
-    function enhanceAgentStats() {
-        const table = document.querySelector('table#predictionTable');
-        if (!table) return false;
+    function getHighchartsChart() {
+        const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        return (typeof win.$ !== 'undefined' && win.$('#container').highcharts && win.$('#container').highcharts()) ||
+               (typeof $ !== 'undefined' && $('#container').highcharts && $('#container').highcharts()) ||
+               (typeof win.Highcharts !== 'undefined' && win.Highcharts.charts && win.Highcharts.charts.find(c => c)) ||
+               (typeof Highcharts !== 'undefined' && Highcharts.charts && Highcharts.charts.find(c => c)) ||
+               null;
+    }
 
-        addRecursionPredictionColumn(table);
-        highlightNextMedals(table);
+    function removeUnusedMedalsFromHighcharts(chart = getHighchartsChart()) {
+        if (!chart || !chart.series) return false;
+
+        let removedAny = false;
+        for (let i = chart.series.length - 1; i >= 0; i--) {
+            const serie = chart.series[i];
+            if (!serie || !serie.name) continue;
+
+            const rawName = serie.name.split('(')[0].trim();
+            if (isUnusedMedal(rawName)) {
+                serie.remove(false);
+                removedAny = true;
+            }
+        }
+
+        if (removedAny) {
+            chart.redraw();
+        }
+
+        return removedAny;
+    }
+
+    function updateOnyxExtrapolations() {
+        const chart = getHighchartsChart();
+        if (!chart || !chart.series) return false;
+
+        removeUnusedMedalsFromHighcharts(chart);
+
+        const extremes = chart.xAxis && chart.xAxis[0] ? chart.xAxis[0].getExtremes() : null;
+        const min = extremes ? extremes.min : -Infinity;
+        const max = extremes ? extremes.max : Infinity;
+
+        for (let i = 0; i < chart.series.length; i++) {
+            const serie = chart.series[i];
+            const previous = chart.series[i - 1];
+
+            if (!serie || serie.options.showInLegend !== false || !previous || !previous.visible) {
+                continue;
+            }
+
+            if (!previous.data || !previous.data.length) {
+                continue;
+            }
+
+            const rawName = previous.name.split('(')[0].trim();
+            if (isUnusedMedal(rawName)) {
+                continue;
+            }
+
+            const req = getBlackRequirement(rawName);
+            if (!req) {
+                continue;
+            }
+
+            const validPoints = previous.data.filter(p => p && typeof p.x === 'number' && typeof p.y === 'number');
+            if (validPoints.length < 2) {
+                continue;
+            }
+
+            const pCurrent = validPoints[validPoints.length - 1];
+            const currentY = pCurrent.y;
+
+            let nextMultiple;
+            let targetY;
+
+            if (currentY >= req) {
+                const currentMultiples = Math.floor(currentY / req);
+                nextMultiple = Math.max(2, currentMultiples + 1);
+                targetY = nextMultiple * req;
+            } else if (!serie.data || serie.data.length === 0) {
+                nextMultiple = 1;
+                targetY = req;
+            } else {
+                continue;
+            }
+
+            // Find points in active zoom window
+            let winPoints = validPoints.filter(p => p.x >= min && p.x <= max);
+            if (winPoints.length < 2) {
+                winPoints = validPoints;
+            }
+
+            let pFirst = winPoints[0];
+            let pLast = winPoints[winPoints.length - 1];
+            let dx = pLast.x - pFirst.x;
+            let dy = pLast.y - pFirst.y;
+
+            // If no progress in window, fall back to entire dataset
+            if (dx <= 0 || dy <= 0) {
+                pFirst = validPoints[0];
+                pLast = pCurrent;
+                dx = pLast.x - pFirst.x;
+                dy = pLast.y - pFirst.y;
+            }
+
+            if (dx <= 0 || dy <= 0) {
+                continue;
+            }
+
+            const rate = dy / dx;
+            const short = targetY - currentY;
+            const timeNeeded = short / rate;
+            const targetX = Math.round(pCurrent.x + timeNeeded);
+
+            serie.setData([
+                { x: pCurrent.x, y: pCurrent.y, progress: "", period: "" },
+                { x: targetX, y: targetY, progress: "", period: "", name: `${nextMultiple}x Black` }
+            ], false);
+        }
+
         return true;
     }
 
-    function init() {
-        if (!enhanceAgentStats()) {
-            const observer = new MutationObserver((mutations, obs) => {
-                if (enhanceAgentStats()) {
-                    obs.disconnect();
+    function setupHighchartsExtrapolation() {
+        const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        let hooked = false;
+
+        function hookExtrapolateFn() {
+            if (typeof win.extrapolate === 'function' && !win.extrapolate._enhancerHooked) {
+                const origExtrapolate = win.extrapolate;
+                const hookedFn = function() {
+                    try {
+                        updateOnyxExtrapolations();
+                    } catch (err) {
+                        console.error('Enhancer error updating onyx extrapolations:', err);
+                    }
+                    return origExtrapolate.apply(this, arguments);
+                };
+                hookedFn._enhancerHooked = true;
+                win.extrapolate = hookedFn;
+                return true;
+            }
+            return false;
+        }
+
+        if (hookExtrapolateFn()) {
+            hooked = true;
+        } else if (!win._enhancerExtrapolateDefined) {
+            win._enhancerExtrapolateDefined = true;
+            let currentFn = win.extrapolate;
+            Object.defineProperty(win, 'extrapolate', {
+                configurable: true,
+                enumerable: true,
+                get() {
+                    return currentFn;
+                },
+                set(fn) {
+                    if (typeof fn === 'function' && !fn._enhancerHooked) {
+                        currentFn = function() {
+                            try {
+                                updateOnyxExtrapolations();
+                            } catch (err) {
+                                console.error('Enhancer error in extrapolate:', err);
+                            }
+                            return fn.apply(this, arguments);
+                        };
+                        currentFn._enhancerHooked = true;
+                    } else {
+                        currentFn = fn;
+                    }
                 }
             });
-            observer.observe(document.body || document.documentElement, {
-                childList: true,
-                subtree: true
-            });
+            hooked = true;
         }
+
+        const btn = document.getElementById('extrapolate');
+        if (btn && !btn._enhancerBound) {
+            btn._enhancerBound = true;
+            btn.addEventListener('click', () => {
+                try {
+                    updateOnyxExtrapolations();
+                } catch (err) {
+                    console.error('Enhancer error on extrapolate click:', err);
+                }
+            }, true);
+            hooked = true;
+        }
+
+        const chart = getHighchartsChart();
+        if (chart) {
+            removeUnusedMedalsFromHighcharts(chart);
+        }
+
+        return hooked;
+    }
+
+    function enhanceAgentStats() {
+        let tableDone = false;
+        const table = document.querySelector('table#predictionTable');
+        if (table) {
+            removeUnusedMedals(table);
+            addRecursionPredictionColumn(table);
+            highlightNextMedals(table);
+            tableDone = true;
+        }
+
+        const chartDone = setupHighchartsExtrapolation();
+
+        return tableDone || chartDone;
+    }
+
+    function init() {
+        enhanceAgentStats();
+
+        // Highcharts may initialize series slightly after initial DOM load
+        let chartPollCount = 0;
+        const chartPollTimer = setInterval(() => {
+            chartPollCount++;
+            const chart = getHighchartsChart();
+            if (chart && chart.series && chart.series.length > 0) {
+                removeUnusedMedalsFromHighcharts(chart);
+                setupHighchartsExtrapolation();
+                clearInterval(chartPollTimer);
+            } else if (chartPollCount >= 20) {
+                clearInterval(chartPollTimer);
+            }
+        }, 300);
+
+        const observer = new MutationObserver((mutations, obs) => {
+            if (enhanceAgentStats()) {
+                const chart = getHighchartsChart();
+                if (chart && chart.series && chart.series.length > 0) {
+                    obs.disconnect();
+                }
+            }
+        });
+        observer.observe(document.body || document.documentElement, {
+            childList: true,
+            subtree: true
+        });
     }
 
     if (document.readyState === 'loading') {
