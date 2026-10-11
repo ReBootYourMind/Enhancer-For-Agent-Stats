@@ -1,11 +1,12 @@
 // ==UserScript==
 // @name         Enhancer for Agent Stats
 // @namespace    http://tampermonkey.net/
-// @version      0.8
+// @version      0.9
 // @description  This fixes and enhances functionality of Agent Stats https://www.agent-stats.com/
 // @author       ReBootYourMind
 // @match        https://www.agent-stats.com/
 // @match        https://www.agent-stats.com/?sort_rank=*&sort_order=*
+// @match        https://www.agent-stats.com/index.php*
 // @exclude      https://www.agent-stats.com/about.php
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=agent-stats.com
 // @downloadURL  https://raw.githubusercontent.com/ReBootYourMind/Enhancer-For-Agent-Stats/refs/heads/main/Enhancer-For-Agent-Stats.user.js
@@ -104,34 +105,57 @@
         return NORMALIZED_UNUSED_MEDALS.has(normalizeMedalName(medalName));
     }
 
+    function getPredictionTableLayout(table) {
+        const row = Array.from(table.querySelectorAll('tbody tr')).find(candidate => {
+            return candidate.cells.length >= 11 && !candidate.querySelector('th');
+        });
+        const enhancedCells = row
+            ? Array.from(row.cells).filter(cell => cell.dataset.enhancerCol).length
+            : 0;
+        const baseCellCount = row ? row.cells.length - enhancedCells : 0;
+        const playerCount = baseCellCount >= 21 ? 2 : 1;
+
+        return {
+            playerCount,
+            latestIndex: player => 1 + player * 5,
+            diffIndex: player => 2 + player * 5,
+            weekIndex: player => 3 + player * 5,
+            monthIndex: player => 4 + player * 5,
+            totalIndex: player => 5 + player * 5,
+            medalIndex: (player, tier) => 1 + playerCount * 5 + tier * playerCount + player
+        };
+    }
+
     // Extrapolate the base date and interval window (in days) using existing server-generated predictions
-    function detectPredictionParameters(table) {
+    function detectPredictionParameters(table, layout = getPredictionTableLayout(table)) {
         const rows = Array.from(table.querySelectorAll('tbody tr')).filter(row => {
             return row.cells.length >= 11 && !row.querySelector('th');
         });
 
         const points = [];
         for (const row of rows) {
-            const diffText = row.cells[2].innerText.replace(/,/g, '').trim();
-            const diff = parseFloat(diffText);
-            if (!diff || diff <= 0) continue;
+            for (let player = 0; player < layout.playerCount; player++) {
+                const diffText = row.cells[layout.diffIndex(player)].innerText.replace(/,/g, '').trim();
+                const diff = parseFloat(diffText);
+                if (!diff || diff <= 0) continue;
 
-            for (let col = 6; col <= 10; col++) {
-                const cell = row.cells[col];
-                if (cell.querySelector('img')) continue;
+                for (let tier = 0; tier < 5; tier++) {
+                    const cell = row.cells[layout.medalIndex(player, tier)];
+                    if (cell.querySelector('img')) continue;
 
-                const dateMatch = cell.innerText.match(/\b(\d{4}-\d{2}-\d{2})\b/);
-                const shortMatch = cell.innerText.match(/([\d,]+)\s+short/);
-                if (dateMatch && shortMatch) {
-                    const date = new Date(dateMatch[1] + 'T00:00:00Z');
-                    const short = parseFloat(shortMatch[1].replace(/,/g, ''));
-                    if (!isNaN(date.getTime()) && short > 0) {
-                        points.push({
-                            date,
-                            short,
-                            diff,
-                            r: short / diff
-                        });
+                    const dateMatch = cell.innerText.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+                    const shortMatch = cell.innerText.match(/([\d,]+)\s+short/);
+                    if (dateMatch && shortMatch) {
+                        const date = new Date(dateMatch[1] + 'T00:00:00Z');
+                        const short = parseFloat(shortMatch[1].replace(/,/g, ''));
+                        if (!isNaN(date.getTime()) && short > 0) {
+                            points.push({
+                                date,
+                                short,
+                                diff,
+                                r: short / diff
+                            });
+                        }
                     }
                 }
             }
@@ -186,8 +210,8 @@
         return { baseDate: bestBaseDate, windowDays: bestWindowDays };
     }
 
-    function getRowRecursionSortKey(row) {
-        const cell = row.querySelector('td[data-enhancer-col="recursion"]');
+    function getRowRecursionSortKey(row, columnKey) {
+        const cell = row.querySelector(`td[data-enhancer-col="${columnKey}"]`);
         if (!cell) return { hasDate: false, dateStr: '', short: Infinity };
 
         const dateMatch = cell.innerText.match(/\b(\d{4}-\d{2}-\d{2})\b/);
@@ -209,6 +233,7 @@
     }
 
     function toggleRecursionSort(table, th) {
+        const columnKey = th.dataset.enhancerCol;
         const currentOrder = th.dataset.sortOrder;
         const newOrder = currentOrder === 'asc' ? 'desc' : 'asc';
         th.dataset.sortOrder = newOrder;
@@ -243,8 +268,8 @@
             });
 
             rows.sort((rowA, rowB) => {
-                const keyA = getRowRecursionSortKey(rowA);
-                const keyB = getRowRecursionSortKey(rowB);
+                const keyA = getRowRecursionSortKey(rowA, columnKey);
+                const keyB = getRowRecursionSortKey(rowB, columnKey);
 
                 if (newOrder === 'asc') {
                     if (keyA.hasDate && keyB.hasDate) {
@@ -292,27 +317,46 @@
         return true;
     }
 
+    function keepPredictionLabelsVisible() {
+        if (document.getElementById('enhancer-sticky-prediction-labels')) return;
+
+        const style = document.createElement('style');
+        style.id = 'enhancer-sticky-prediction-labels';
+        style.textContent = '#predictionTable tbody td:first-child {' +
+            'position: -webkit-sticky !important; position: sticky !important; left: 0 !important;' +
+            'z-index: 2; background-color: #262626; background-clip: padding-box;' +
+            'box-shadow: -8px 0 0 #262626, 2px 0 3px rgba(0, 0, 0, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.25);' +
+            '}';
+        (document.head || document.documentElement).appendChild(style);
+    }
+
     function addRecursionPredictionColumn(table) {
         if (!table) return false;
 
-        const theadRow = table.querySelector('thead tr');
-        if (!theadRow) return false;
+        const theadRows = Array.from(table.querySelectorAll('thead tr'));
+        if (!theadRows.length) return false;
 
-        // Ensure column header is added once
-        let th = table.querySelector('th[data-enhancer-col="recursion"]');
-        if (!th) {
+        const layout = getPredictionTableLayout(table);
+        for (let player = 0; player < layout.playerCount; player++) {
+            const columnKey = layout.playerCount === 1 ? 'recursion' : `recursion-${player}`;
+            if (table.querySelector(`th[data-enhancer-col="${columnKey}"]`)) continue;
+
             const colgroup = table.querySelector('colgroup');
-            if (colgroup && !colgroup.querySelector('col[data-enhancer-col="recursion"]')) {
+            if (colgroup) {
                 const col = document.createElement('col');
-                col.dataset.enhancerCol = 'recursion';
+                col.dataset.enhancerCol = columnKey;
+                if (colgroup.children.length >= 2 && colgroup.children.length % 2 === 0) {
+                    col.classList.add('current');
+                }
                 col.style.width = '85px';
                 col.style.minWidth = '85px';
                 colgroup.appendChild(col);
             }
 
-            th = document.createElement('th');
-            th.dataset.enhancerCol = 'recursion';
-            th.title = 'Sort by Next Black Multiple (Recursion)';
+            const th = document.createElement('th');
+            th.dataset.enhancerCol = columnKey;
+            th.dataset.playerIndex = String(player);
+            th.title = `Sort by Next Black Multiple (Recursion${layout.playerCount === 2 ? `: ${theadRows[0].cells[1 + player].innerText.trim()}` : ''})`;
             th.style.cursor = 'pointer';
             th.style.whiteSpace = 'nowrap';
             th.style.minWidth = '85px';
@@ -329,88 +373,124 @@
                 '<span class="enhancer-sort-arrow" style="display: inline-block; font-size: 13px; line-height: 1; user-select: none;"></span>' +
             '</div>';
 
-            th.addEventListener('click', (e) => {
-                e.preventDefault();
-                toggleRecursionSort(table, th);
-            });
+            if (layout.playerCount === 2 && theadRows.length > 1) {
+                th.colSpan = layout.playerCount;
+                th.removeAttribute('data-enhancer-col');
+                th.removeAttribute('data-player-index');
+                th.removeAttribute('title');
+                th.style.cursor = 'default';
+                th.innerHTML = '<div style="display: inline-flex; align-items: center; justify-content: center; max-width: 100%; vertical-align: middle;">' +
+                    '<div class="recursion-frame" style="display: inline-block; vertical-align: middle; width:48px;">' +
+                        '<img alt="black" src="/img/black.png" height="32" width="32">' +
+                    '</div>' +
+                '</div>';
 
-            theadRow.appendChild(th);
+                const agentHeader = theadRows[0].cells[1 + player].cloneNode(true);
+                agentHeader.dataset.enhancerAgentHeader = columnKey;
+                agentHeader.dataset.enhancerCol = columnKey;
+                agentHeader.dataset.playerIndex = String(player);
+                agentHeader.title = `Sort by Next Black Multiple (Recursion: ${agentHeader.innerText.trim()})`;
+                agentHeader.style.cursor = 'pointer';
+                const agentLabel = agentHeader.querySelector('.enl');
+                if (agentLabel) {
+                    const arrow = document.createElement('span');
+                    arrow.className = 'enhancer-sort-arrow';
+                    arrow.style.marginLeft = '4px';
+                    arrow.style.fontSize = '13px';
+                    arrow.style.userSelect = 'none';
+                    agentLabel.appendChild(arrow);
+                }
+                agentHeader.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    toggleRecursionSort(table, agentHeader);
+                });
+                theadRows[0].appendChild(agentHeader);
+                if (player === 0) {
+                    theadRows[1].appendChild(th);
+                    for (let rowIndex = 2; rowIndex < theadRows.length; rowIndex++) {
+                        theadRows[rowIndex].appendChild(document.createElement('th'));
+                    }
+                }
+            } else {
+                th.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    toggleRecursionSort(table, th);
+                });
+                theadRows[0].appendChild(th);
+                for (let rowIndex = 1; rowIndex < theadRows.length; rowIndex++) {
+                    theadRows[rowIndex].appendChild(document.createElement('th'));
+                }
+            }
         }
 
         const rows = Array.from(table.querySelectorAll('tbody tr')).filter(row => {
-            return row.cells.length >= 11 && !row.querySelector('th');
+            return row.cells.length >= 1 + layout.playerCount * 10 && !row.querySelector('th');
         });
 
         if (!rows.length) return false;
 
-        const { baseDate, windowDays } = detectPredictionParameters(table);
+        const { baseDate, windowDays } = detectPredictionParameters(table, layout);
 
         for (const row of rows) {
-            if (row.querySelector('td[data-enhancer-col="recursion"]')) {
-                continue;
-            }
-
             const rawName = row.cells[0].childNodes[0]?.textContent?.trim() || row.cells[0].innerText.split('\n')[0].trim();
             const req = getBlackRequirement(rawName);
+            for (let player = 0; player < layout.playerCount; player++) {
+                const columnKey = layout.playerCount === 1 ? 'recursion' : `recursion-${player}`;
+                if (row.querySelector(`td[data-enhancer-col="${columnKey}"]`)) continue;
 
-            const totalText = row.cells[5].innerText.replace(/,/g, '').trim();
-            const total = parseFloat(totalText);
+                const total = parseFloat(row.cells[layout.totalIndex(player)].innerText.replace(/,/g, '').trim());
+                const diff = parseFloat(row.cells[layout.diffIndex(player)].innerText.replace(/,/g, '').trim());
+                const week = parseFloat(row.cells[layout.weekIndex(player)].innerText.replace(/,/g, '').trim());
+                const month = parseFloat(row.cells[layout.monthIndex(player)].innerText.replace(/,/g, '').trim());
 
-            const diffText = row.cells[2].innerText.replace(/,/g, '').trim();
-            const diff = parseFloat(diffText);
+                let cellContent = 'N/A';
+                let cellTitle = '';
+                let nextMultiple = null;
 
-            const weekText = row.cells[3].innerText.replace(/,/g, '').trim();
-            const week = parseFloat(weekText);
+                if (req && !isNaN(total)) {
+                    const currentMultiples = Math.floor(total / req);
+                    nextMultiple = Math.max(2, currentMultiples + 1);
+                    const target = nextMultiple * req;
+                    const short = target - total;
 
-            const monthText = row.cells[4].innerText.replace(/,/g, '').trim();
-            const month = parseFloat(monthText);
+                    let dailyRate = 0;
+                    if (diff > 0 && windowDays > 0) {
+                        dailyRate = diff / windowDays;
+                    } else if (month > 0) {
+                        dailyRate = month / 30;
+                    } else if (week > 0) {
+                        dailyRate = week / 7;
+                    }
 
-            let cellContent = '-';
-            let cellTitle = '';
-            let nextMultiple = null;
-
-            if (req && !isNaN(total)) {
-                const currentMultiples = Math.floor(total / req);
-                nextMultiple = Math.max(2, currentMultiples + 1);
-                const target = nextMultiple * req;
-                const short = target - total;
-
-                let dailyRate = 0;
-                if (diff > 0 && windowDays > 0) {
-                    dailyRate = diff / windowDays;
-                } else if (month > 0) {
-                    dailyRate = month / 30;
-                } else if (week > 0) {
-                    dailyRate = week / 7;
+                    if (dailyRate > 0) {
+                        const daysNeeded = short / dailyRate;
+                        const targetDate = new Date(baseDate.getTime() + daysNeeded * 86400000);
+                        const yyyy = targetDate.getUTCFullYear();
+                        const mm = String(targetDate.getUTCMonth() + 1).padStart(2, '0');
+                        const dd = String(targetDate.getUTCDate()).padStart(2, '0');
+                        const dateStr = `${yyyy}-${mm}-${dd}`;
+                        cellContent = `${dateStr}<div class="details">${short.toLocaleString('en-US')} short</div>`;
+                    } else {
+                        cellContent = `N/A<div class="details">${short.toLocaleString('en-US')} short</div>`;
+                    }
+                    cellTitle = `${nextMultiple}x Black: ${short.toLocaleString('en-US')} short of ${target.toLocaleString('en-US')}`;
                 }
 
-                if (dailyRate > 0) {
-                    const daysNeeded = short / dailyRate;
-                    const targetDate = new Date(baseDate.getTime() + daysNeeded * 86400000);
-                    const yyyy = targetDate.getUTCFullYear();
-                    const mm = String(targetDate.getUTCMonth() + 1).padStart(2, '0');
-                    const dd = String(targetDate.getUTCDate()).padStart(2, '0');
-                    const dateStr = `${yyyy}-${mm}-${dd}`;
-                    cellContent = `${dateStr}<div class="details">${short.toLocaleString('en-US')} short</div>`;
-                } else {
-                    cellContent = `N/A<div class="details">${short.toLocaleString('en-US')} short</div>`;
+                const td = document.createElement('td');
+                td.dataset.enhancerCol = columnKey;
+                td.dataset.playerIndex = String(player);
+                td.style.whiteSpace = 'nowrap';
+                td.style.padding = '8px 4px';
+                td.style.boxSizing = 'border-box';
+                if (nextMultiple) {
+                    td.dataset.nextMultiple = String(nextMultiple);
                 }
-                cellTitle = `${nextMultiple}x Black: ${short.toLocaleString('en-US')} short of ${target.toLocaleString('en-US')}`;
+                if (cellTitle) {
+                    td.title = cellTitle;
+                }
+                td.innerHTML = cellContent;
+                row.appendChild(td);
             }
-
-            const td = document.createElement('td');
-            td.dataset.enhancerCol = 'recursion';
-            td.style.whiteSpace = 'nowrap';
-            td.style.padding = '8px 4px';
-            td.style.boxSizing = 'border-box';
-            if (nextMultiple) {
-                td.dataset.nextMultiple = String(nextMultiple);
-            }
-            if (cellTitle) {
-                td.title = cellTitle;
-            }
-            td.innerHTML = cellContent;
-            row.appendChild(td);
         }
 
         return true;
@@ -419,8 +499,9 @@
     function highlightNextMedals(table = document.querySelector('table#predictionTable')) {
         if (!table) return false;
 
+        const layout = getPredictionTableLayout(table);
         const rows = Array.from(table.querySelectorAll('tbody tr')).filter(row => {
-            return row.cells.length >= 11 && !row.querySelector('th');
+            return row.cells.length >= 1 + layout.playerCount * 10 && !row.querySelector('th');
         });
 
         if (!rows.length) return false;
@@ -433,51 +514,58 @@
             delete td.dataset.enhancerHighlight;
         });
 
-        const totalCols = rows[0].cells.length;
+        for (let player = 0; player < layout.playerCount; player++) {
+            for (let tier = 0; tier < 5; tier++) {
+                let earliestDate = null;
+                let targetCell = null;
 
-        // For each medal tier column (starting at column 6: Bronze, Silver, Gold, Platinum, Black, Recursion),
-        // find the single next upcoming medal across all rows.
-        for (let col = 6; col < totalCols; col++) {
-            let earliestDate = null;
-            let targetCell = null;
+                for (const row of rows) {
+                    let allPreviousEarned = true;
+                    for (let previousTier = 0; previousTier < tier; previousTier++) {
+                        if (!row.cells[layout.medalIndex(player, previousTier)].querySelector('img')) {
+                            allPreviousEarned = false;
+                            break;
+                        }
+                    }
+                    if (!allPreviousEarned) continue;
 
-            for (const row of rows) {
-                // 1. All prior tiers must already be earned (contain an <img>)
-                let allPreviousEarned = true;
-                for (let prev = 6; prev < col; prev++) {
-                    if (!row.cells[prev].querySelector('img')) {
-                        allPreviousEarned = false;
-                        break;
+                    const currentCell = row.cells[layout.medalIndex(player, tier)];
+                    if (!currentCell || currentCell.querySelector('img')) continue;
+
+                    const match = currentCell.innerText.match(/\b\d{4}-\d{2}-\d{2}\b/);
+                    if (!match) continue;
+
+                    const dateStr = match[0];
+                    if (!earliestDate || dateStr < earliestDate) {
+                        earliestDate = dateStr;
+                        targetCell = currentCell;
                     }
                 }
 
-                if (!allPreviousEarned) {
-                    continue;
+                if (targetCell) {
+                    targetCell.classList.add('highlight');
                 }
+            }
+        }
 
-                const currentCell = row.cells[col];
+        for (let player = 0; player < layout.playerCount; player++) {
+            const recursionKey = layout.playerCount === 1 ? 'recursion' : `recursion-${player}`;
+            let earliestRecursionDate = null;
+            let nextRecursionCell = null;
 
-                // 2. Current tier must not already be earned
-                if (currentCell.querySelector('img')) {
-                    continue;
-                }
+            for (const row of rows) {
+                const currentCell = row.querySelector(`td[data-enhancer-col="${recursionKey}"]`);
+                if (!currentCell) continue;
 
-                // 3. Must contain a valid prediction date (YYYY-MM-DD), ignoring N/A, empty, or '?'
                 const match = currentCell.innerText.match(/\b\d{4}-\d{2}-\d{2}\b/);
-                if (!match) {
-                    continue;
-                }
-
-                const dateStr = match[0];
-                if (!earliestDate || dateStr < earliestDate) {
-                    earliestDate = dateStr;
-                    targetCell = currentCell;
+                if (match && (!earliestRecursionDate || match[0] < earliestRecursionDate)) {
+                    earliestRecursionDate = match[0];
+                    nextRecursionCell = currentCell;
                 }
             }
 
-            // Highlight the single earliest upcoming medal for this tier column matching site style
-            if (targetCell) {
-                targetCell.classList.add('highlight');
+            if (nextRecursionCell) {
+                nextRecursionCell.classList.add('highlight');
             }
         }
 
@@ -491,6 +579,89 @@
                (typeof win.Highcharts !== 'undefined' && win.Highcharts.charts && win.Highcharts.charts.find(c => c)) ||
                (typeof Highcharts !== 'undefined' && Highcharts.charts && Highcharts.charts.find(c => c)) ||
                null;
+    }
+
+    function getLifetimeApPoints(series) {
+        const rawPoints = series.options?.data?.length
+            ? series.options.data
+            : (series.data?.length ? series.data : series.points);
+        if (!Array.isArray(rawPoints)) return [];
+
+        return rawPoints.map(point => {
+            if (Array.isArray(point)) {
+                return { x: Number(point[0]), y: Number(point[1]) };
+            }
+            return {
+                x: Number(point?.x ?? point?.options?.x),
+                y: Number(point?.y ?? point?.options?.y)
+            };
+        }).filter(point => Number.isFinite(point.x) && Number.isFinite(point.y))
+            .sort((a, b) => a.x - b.x);
+    }
+
+    function updateJustGainedAp(chart = getHighchartsChart()) {
+        if (!chart?.series) return false;
+
+        let updatedAny = false;
+        for (const summary of document.querySelectorAll('.predictionList')) {
+            const usernameElement = summary.querySelector('p .enl');
+            const username = usernameElement?.textContent.trim().replace(/^@/, '');
+            if (!username) continue;
+
+            const expectedName = `lifetime_ap (@${username})`.toLowerCase();
+            const series = chart.series.find(candidate => candidate?.name?.toLowerCase() === expectedName);
+            if (!series) continue;
+
+            const points = getLifetimeApPoints(series);
+            if (points.length < 2) continue;
+
+            const previous = points[points.length - 2];
+            const latest = points[points.length - 1];
+            const gained = latest.y - previous.y;
+
+            const justGainedItem = Array.from(summary.querySelectorAll('li'))
+                .find(item => /just gained/i.test(item.textContent));
+            const justGainedNode = justGainedItem && Array.from(justGainedItem.childNodes).find(node => {
+                return node.nodeType === Node.TEXT_NODE && /just gained/i.test(node.textContent);
+            });
+            if (justGainedNode && Number.isFinite(gained) && gained >= 0) {
+                const updatedText = justGainedNode.textContent.replace(
+                    /(just gained\s+)[\d,]+(\s+AP)/i,
+                    `$1${gained.toLocaleString('en-US')}$2`
+                );
+                if (updatedText !== justGainedNode.textContent) {
+                    justGainedNode.textContent = updatedText;
+                    updatedAny = true;
+                }
+            }
+
+            const extremes = chart.xAxis?.[0]?.getExtremes?.();
+            const selectedPoints = extremes && Number.isFinite(extremes.min) && Number.isFinite(extremes.max)
+                ? points.filter(point => point.x >= extremes.min && point.x <= extremes.max)
+                : points;
+            if (selectedPoints.length < 2) continue;
+
+            const selectedGain = selectedPoints[selectedPoints.length - 1].y - selectedPoints[0].y;
+            if (!Number.isFinite(selectedGain) || selectedGain < 0) continue;
+
+            const diffItem = Array.from(summary.querySelectorAll('li'))
+                .find(item => /gains\s+-?[\d,]+\s+AP\s+every\s+diff/i.test(item.textContent));
+            const diffNode = diffItem && Array.from(diffItem.childNodes).find(node => {
+                return node.nodeType === Node.TEXT_NODE && /gains\s+-?[\d,]+\s+AP\s+every\s+diff/i.test(node.textContent);
+            });
+            if (diffNode) {
+                const updatedText = diffNode.textContent.replace(
+                    /(gains\s+)-?[\d,]+(\s+AP\s+every\s+diff)/i,
+                    `$1${selectedGain.toLocaleString('en-US')}$2`
+                );
+                if (updatedText !== diffNode.textContent) {
+                    diffNode.textContent = updatedText;
+                    updatedAny = true;
+                }
+            }
+        }
+
+        return updatedAny;
     }
 
     function removeUnusedMedalsFromHighcharts(chart = getHighchartsChart()) {
@@ -683,15 +854,17 @@
         let tableDone = false;
         const table = document.querySelector('table#predictionTable');
         if (table) {
+            keepPredictionLabelsVisible();
             removeUnusedMedals(table);
             addRecursionPredictionColumn(table);
             highlightNextMedals(table);
             tableDone = true;
         }
 
+        const justGainedDone = updateJustGainedAp();
         const chartDone = setupHighchartsExtrapolation();
 
-        return tableDone || chartDone;
+        return tableDone || justGainedDone || chartDone;
     }
 
     function init() {
@@ -704,6 +877,7 @@
             const chart = getHighchartsChart();
             if (chart && chart.series && chart.series.length > 0) {
                 removeUnusedMedalsFromHighcharts(chart);
+                updateJustGainedAp(chart);
                 setupHighchartsExtrapolation();
                 clearInterval(chartPollTimer);
             } else if (chartPollCount >= 20) {

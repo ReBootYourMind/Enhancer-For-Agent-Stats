@@ -10,8 +10,10 @@ To use this javascript install Tampermonkey or a similar tool to your browser an
 - **Prediction Table Highlighting**: Fixes next medal prediction highlighting on `table#predictionTable` by identifying the single earliest upcoming medal for each medal tier column, while correctly handling recursion badges, missing projections, and `N/A` values.
 - **Recursion Black Medal Predictions**: Adds a new column to the prediction table calculating when the next multiple of a black medal (black with recursion-frame) will be earned, and highlights the earliest upcoming recursion medal.
 - **Client-Side Recursion Sorting**: Clicking the header image of the Recursion Prediction Column sorts rows in ascending order (earliest projected date first), and clicking again switches to descending order (and back), with an active sort indicator arrow (`↑` or `↓`).
+- **Comparison Table Support**: Applies prediction highlighting and adds an independently calculated and sortable recursion prediction column for each agent when comparing stats.
 - **Remove Expired Event Medals**: Automatically removes deprecated and expired event medals (`cryptic_memories_op`, `operation_chronos`, `prime_challenge`) from the prediction table and the Highcharts graph.
 - **Highcharts Multiple Onyx Extrapolations**: Extends the site's Highcharts graph extrapolation to calculate and display projections for multiples of Black/Onyx medals (e.g. 2x, 3x, etc.) based on user progress in the selected time window.
+- **Recursion-Safe AP Gain**: Calculates each agent's "just gained" AP from the latest two lifetime AP points and "every diff" AP from the selected Highcharts time window, so recursion resets do not produce negative gains.
 
 # TODO:
 
@@ -24,15 +26,20 @@ To use this javascript install Tampermonkey or a similar tool to your browser an
 7. [x] Remove old unused medals from highcharts
 8. [ ] Fix some medals not getting a label when selected on highcharts
 9. [ ] Make medal selection better on highcharts
-10. [ ] Change unavailable recursion predictions from "-" to "N/A"
+10. [x] Change unavailable recursion predictions from "-" to "N/A"
 11. [ ] Add medal icons into the Highcharts graph axis, mouse over and labels.
-12. [ ] Change @match so that script runs when comparing stats with another player and make sure everything still works.
+12. [x] Change @match so that script runs when comparing stats with another player and make sure everything still works.
 13. [ ] Add horizontal lines to the Highchart graph for extrapolated onyxes
-14. [ ] Change "just gained" numbers to calculate from all time ap so they work even when recursed. (to avoid gaining negative AP)
+14. [x] Change "just gained" numbers to calculate from all time ap so they work even when recursed. (to avoid gaining negative AP)
 15. [ ] Find a proper place and add "copy scanner link" for other agents. This is to open their profile ingame. For example this should work at the sharelist and when comparing with an agent.
 16. [ ] Make it so that when the prediction table is too wide for the screen the labels for each row are always still visible when scrolling to the right.
 
 # Version History
+
+## 0.9
+
+- Recalculated each agent's "just gained" AP from their latest lifetime AP history and "every diff" AP from the selected graph time window, including on comparison pages.
+- Added support for agent comparisons.
 
 ## 0.8
 
