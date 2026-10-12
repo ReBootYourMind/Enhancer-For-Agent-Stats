@@ -43,6 +43,10 @@ If the installation page does not open automatically, copy the raw script URL fr
 14. [x] Change "just gained" numbers to calculate from all time ap so they work even when recursed. (to avoid gaining negative AP)
 15. [ ] Find a proper place and add "copy scanner link" for other agents. This is to open their profile ingame. For example this should work at the sharelist and when comparing with an agent.
 16. [x] Make it so that when the prediction table is too wide for the screen the labels for each row are always still visible when scrolling to the right.
+17. [ ] Fix switching from recursed sorting back to whatever sorting you had before that. Currently the site "toggles" that sorting instead of turning it back on.
+18. [ ] Add recursion medal image for the graph recursion `/img/recursions-bronze.png` It has just one level.
+19. [ ] Make readme feature list easier to read, Technical details can be somewhere else. The top of the readme should be like an ad for the project.
+20. [ ] Move todos away from the readme file.
 
 # Version History
 
