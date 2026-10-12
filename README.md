@@ -21,7 +21,8 @@ If the installation page does not open automatically, copy the raw script URL fr
 - **Client-Side Recursion Sorting**: Clicking the header image of the Recursion Prediction Column sorts rows in ascending order (earliest projected date first), and clicking again switches to descending order (and back), with an active sort indicator arrow (`↑` or `↓`).
 - **Comparison Table Support**: Applies prediction highlighting and adds an independently calculated and sortable recursion prediction column for each agent when comparing stats. The label for each row will stick to the left edge of the screen.
 - **Remove Expired Event Medals**: Automatically removes deprecated and expired event medals (`cryptic_memories_op`, `operation_chronos`, `prime_challenge`) from the prediction table and the Highcharts graph.
-- **Highcharts Multiple Onyx Extrapolations**: Extends the site's Highcharts graph extrapolation to calculate and display projections for multiples of Black/Onyx medals (e.g. 2x, 3x, etc.) based on user progress in the selected time window, with matching labeled horizontal guide lines.
+- **Highcharts Recursed Medal Guides**: Displays labeled dashed guides for recursed medal thresholds that fit within the current graph y-axis range. Guides do not expand the axis.
+- **Highcharts Medal Icons**: Displays each medal's currently achieved tier icon beside its graph legend (using each agent's own latest value on comparison charts) and the tier reached at each hovered data point, including extrapolated points. Black icons show a recursion frame and count from the relevant value (or milestone multiple), while values below 2x Black retain the standard icon. Native Bronze-through-Black/Onyx guide labels and generated recursion milestones use the matching medal-tier icon.
 - **Recursion-Safe AP Gain**: Calculates each agent's "just gained" AP from the latest two lifetime AP points and "every diff" AP from the selected Highcharts time window, so recursion resets do not produce negative gains.
 
 # TODO:
@@ -36,7 +37,7 @@ If the installation page does not open automatically, copy the raw script URL fr
 8. [ ] Fix some medals not getting a label when selected on highcharts
 9. [ ] Make medal selection better on highcharts
 10. [x] Change unavailable recursion predictions from "-" to "N/A"
-11. [ ] Add medal icons into the Highcharts graph axis, mouse over and labels.
+11. [x] Add medal icons into the Highcharts graph axis, mouse over and labels.
 12. [x] Change @match so that script runs when comparing stats with another player and make sure everything still works.
 13. [x] Add horizontal lines to the Highchart graph for extrapolated onyxes
 14. [x] Change "just gained" numbers to calculate from all time ap so they work even when recursed. (to avoid gaining negative AP)
@@ -44,6 +45,12 @@ If the installation page does not open automatically, copy the raw script URL fr
 16. [x] Make it so that when the prediction table is too wide for the screen the labels for each row are always still visible when scrolling to the right.
 
 # Version History
+
+## 0.11
+
+- Shows recursed-medal guide lines when a visible extrapolation reaches those milestones.
+- Shows every recursed medal guide within the current y-axis range without expanding the axis.
+- Added medal icons to highcharts graph.
 
 ## 0.10
 

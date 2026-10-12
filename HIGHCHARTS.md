@@ -1,6 +1,6 @@
 # Highcharts Architecture & Interoperability Notes
 
-This document details the reverse-engineered structure and behavior of Highcharts on [Agent Stats](https://www.agent-stats.com/). Use this as a technical reference when maintaining or implementing graph-related enhancements (e.g. TODOs #6, #7, #8, #9, and #13).
+This document details the reverse-engineered structure and behavior of Highcharts on [Agent Stats](https://www.agent-stats.com/). Use this as a technical reference when maintaining or implementing graph-related enhancements (e.g. TODOs #6, #7, #8, #9, #11, and #13).
 
 ---
 
@@ -142,17 +142,22 @@ In [`Enhancer-For-Agent-Stats.user.js`](Enhancer-For-Agent-Stats.user.js):
      - Calls `serie.setData([pCurrent, pTarget], false)`.
    - The original `extrapolate()` loop then marks `serie.setVisible(true, false)` and calls `chart.redraw()`.
 3. **Adding Recursed-Medal Guide Lines**:
-   - Adds dashed horizontal y-axis plot lines at each recursed multiple from 2x through the next multiple above the highest current value for that medal. A 2x line is added even if the medal has not yet reached 1x Black.
+   - Adds dashed horizontal y-axis plot lines for every recursed milestone inside the current axis range for each visible medal series, whether or not extrapolation is active. A milestone outside the current range is omitted.
    - Lines are keyed by normalized medal name and multiple, so comparison charts get one shared guide line per milestone rather than duplicate lines per player.
    - When available, the line copies the native 1x Black plot line's styling and label format (for example, `explorer black` becomes `explorer 2x black`). Otherwise it uses a dashed line and a generated label.
    - The native plot lines are available on each axis's `plotLinesAndBands`; generated lines are added and removed through `axis.addPlotLine()` and `axis.removePlotLine()`. A private ID prefix keeps enhancer-owned lines separate from site lines. Use each series's assigned `series.yAxis`, not an assumed first axis.
    - `series.data` is not a complete source of medal history: Highcharts only instantiates points as needed and can crop points outside the current view. The enhancer therefore reads the full `series.options.data` first (including `[x, y]` tuples), falling back to instantiated points only when source data is unavailable.
-   - Highcharts clips a plot line when its value is outside the y-axis extremes, and plot lines do not themselves expand those extremes. The enhancer expands an auto-scaled y-axis only while extrapolation is active, slightly above the highest generated guide so the next milestone can be seen. It saves the original user-selected extremes and restores them on `unextrapolate()`; auto-scaled axes are returned to auto-scaling after extrapolated series are hidden. It does not override a maximum explicitly selected by the user.
-   - `updateOnyxMilestoneLines(chart)` runs when the chart is initialized and before extrapolation. It is also rescheduled after chart redraws and `afterSetExtremes`, because legend visibility and extrapolation change the active axis range. It redraws the chart after axis changes even if the plot-line definitions are unchanged, as Highcharts may otherwise leave newly in-range lines visually stale. Startup retries briefly after chart discovery because the chart instance can precede populated series data. It only derives guides from medal series currently visible in the legend, is idempotent, and removes lines for milestones no longer present.
+   - Highcharts clips a plot line when its value is outside the y-axis extremes, and plot lines do not themselves expand those extremes. The enhancer never changes axis extremes to force a guide into view.
+   - `updateOnyxMilestoneLines(chart)` runs when the chart is initialized and is rescheduled after chart redraws and `afterSetExtremes`, because legend visibility and extrapolation change the active axis range. It only adds guides within the current range for visible base medal series, is idempotent, and removes guides that are no longer within range or whose medal series is hidden.
 
 ---
 
 ## 7. Roadmap & Follow-up Tasks
+
+### TODO #11: Add Medal Icons to Highcharts [Completed]
+- **Legend**: A medal series displays the icon for the highest tier reached by its latest data point. Each comparison series is evaluated independently, and a value at or above Black/Onyx (including further recursion multiples) continues to use the Black icon.
+- **Tooltip**: Each medal point uses its own y-value and axis tier thresholds, so historical points and extrapolated predictions show the tier reached at that point. Recursed Black/Onyx icons use the prediction table's `recursion-frame` and `badge` styling. The graph frame is 28px square with its 18px medal centered inside, keeping the medal the same size as other graph icons; an explicit yellow bubble displays the achieved multiple from 2x onward, including in Highcharts HTML labels and tooltips. Non-medal series remain text-only.
+- **Milestone Labels**: Native Bronze, Silver, Gold, Platinum, and Black/Onyx plot-line labels use the corresponding medal-tier icon. Generated recursive Black/Onyx guide labels use the Black icon. Since Highcharts renders `useHTML` plot-line labels in an HTML overlay that can cover the SVG tooltip regardless of the label's configured z-index, the enhancer temporarily hides only labels overlapping the visible tooltip and restores them when the tooltip closes. HTML labels omit the unsupported `alt` attribute to avoid Highcharts' invalid-attribute warning.
 
 ### TODO #7: Remove Old Unused Medals from Highcharts [Completed in v0.8]
 - **Implementation**: [`removeUnusedMedalsFromHighcharts(chart)`](Enhancer-For-Agent-Stats.user.js) iterates backwards through `chart.series` and calls `serie.remove(false)` for any series matching `isUnusedMedal(name)`.

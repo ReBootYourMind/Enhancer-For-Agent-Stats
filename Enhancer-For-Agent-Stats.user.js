@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Enhancer for Agent Stats
 // @namespace    http://tampermonkey.net/
-// @version      0.10
+// @version      0.11
 // @description  This fixes and enhances functionality of Agent Stats https://www.agent-stats.com/
 // @author       ReBootYourMind
 // @match        https://www.agent-stats.com/
@@ -581,6 +581,285 @@
                null;
     }
 
+    function escapeHighchartsHtml(value) {
+        return String(value).replace(/[&<>"']/g, char => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        })[char]);
+    }
+
+    function getRecursionCountForValue(medalName, value) {
+        const requirement = getBlackRequirement(medalName);
+        if (!requirement || value === null || value === undefined || value === '' ||
+            !Number.isFinite(Number(value))) return null;
+
+        const count = Math.floor(Number(value) / requirement);
+        return count >= 2 ? count : null;
+    }
+
+    function getRecursionCountFromLabel(labelText) {
+        const plainLabel = getPlainHighchartsLabelText(labelText);
+        const match = plainLabel.match(/(?:^|\b)(\d+)\s*x\b/i) ||
+            plainLabel.match(/\bx\s*(\d+)(?:\b|$)/i);
+        const count = match ? Number(match[1]) : null;
+        return Number.isInteger(count) && count >= 2 ? count : null;
+    }
+
+    function getMedalImageHtml(medalName, tier = 'bronze', recursionCount = null) {
+        const imageName = medalName.toLowerCase().trim()
+            .replace(/\s+/g, '_')
+            .replace(/[^a-z0-9_-]/g, '');
+        if (!imageName) return '';
+
+        if (tier === 'black' && Number.isInteger(recursionCount) && recursionCount >= 2) {
+            return `<div class="recursion-frame" style="display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;box-sizing:border-box;width:28px;height:28px;padding:0;background-size:28px 28px;margin-right:4px;">` +
+                `<span class="badge" style="position:relative;display:inline-flex;align-items:center;justify-content:center;line-height:0;">` +
+                `<img src="/img/${imageName}-black.png" style="display:block;width:18px;height:18px">` +
+                `<span style="position:absolute;top:-5px;right:-7px;z-index:1;display:block;width:16px;height:16px;border-radius:50%;background:#fdd73c;color:#000;font:11px/16px Arial,sans-serif;text-align:center;white-space:nowrap;">${recursionCount}</span>` +
+                '</span></div>';
+        }
+
+        return `<img src="/img/${imageName}-${tier}.png" style="width:18px;height:18px;vertical-align:middle;margin-right:4px">`;
+    }
+
+    function getPlainHighchartsLabelText(labelText) {
+        return String(labelText || '')
+            .replace(/<[^>]*>/g, '')
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&#39;/g, "'");
+    }
+
+    function getTierFromMedalLabel(labelText, medalName) {
+        const normalizedLabel = normalizeMedalName(getPlainHighchartsLabelText(labelText));
+        const normalizedMedal = normalizeMedalName(medalName);
+        if (!normalizedMedal || !normalizedLabel.startsWith(normalizedMedal)) return null;
+
+        const suffix = normalizedLabel.slice(normalizedMedal.length);
+        if (suffix.includes('bronze')) return 'bronze';
+        if (suffix.includes('silver')) return 'silver';
+        if (suffix.includes('gold')) return 'gold';
+        if (suffix.includes('platinum')) return 'platinum';
+        // Agent Stats calls the top medal Black; its image and recursion lines
+        // retain that name even when describing the Onyx tier.
+        if (suffix.includes('black') || suffix.includes('onyx')) return 'black';
+        return null;
+    }
+
+    function getMedalTierRequirements(medalName, axis) {
+        const requirements = new Map();
+        const addPlotLines = plotLines => {
+            if (!Array.isArray(plotLines)) return;
+            for (const plotLine of plotLines) {
+                const options = plotLine.options || plotLine;
+                if (options.id?.startsWith('enhancer-recursed-onyx-')) continue;
+                const tier = getTierFromMedalLabel(options.label?.text, medalName);
+                const value = Number(options.value);
+                if (tier && Number.isFinite(value)) {
+                    requirements.set(tier, value);
+                }
+            }
+        };
+
+        if (axis) {
+            addPlotLines(axis.options?.plotLines);
+            addPlotLines(axis.plotLinesAndBands);
+        }
+
+        const blackRequirement = getBlackRequirement(medalName);
+        if (blackRequirement && !requirements.has('black')) {
+            requirements.set('black', blackRequirement);
+        }
+        return requirements;
+    }
+
+    function getMedalTierForValue(medalName, value, axis) {
+        if (!getBlackRequirement(medalName) || value === null || value === undefined ||
+            value === '' || !Number.isFinite(Number(value))) return null;
+
+        const currentValue = Number(value);
+        const requirements = getMedalTierRequirements(medalName, axis);
+        let achievedTier = null;
+        let achievedRequirement = -Infinity;
+        for (const [tier, requirement] of requirements) {
+            if (currentValue >= requirement && requirement >= achievedRequirement) {
+                achievedTier = tier;
+                achievedRequirement = requirement;
+            }
+        }
+        return achievedTier;
+    }
+
+    function getLatestSeriesValue(series) {
+        const points = getMilestoneSeriesPoints(series);
+        return points.length ? points[points.length - 1].y : null;
+    }
+
+    function getHighchartsMedalName(seriesName) {
+        return seriesName.split('(@')[0].trim();
+    }
+
+    function setupTooltipPlotLineLabelCollision(chart) {
+        const tooltip = chart?.tooltip;
+        if (!tooltip || tooltip._enhancerPlotLineCollisionSetup ||
+            typeof tooltip.refresh !== 'function' || typeof tooltip.hide !== 'function') return false;
+
+        const originalRefresh = tooltip.refresh;
+        const originalHide = tooltip.hide;
+        const hiddenLabels = new Map();
+
+        const restoreLabels = () => {
+            for (const [label, visibility] of hiddenLabels) {
+                if (!label.isConnected) continue;
+                if (visibility.value) {
+                    label.style.setProperty('visibility', visibility.value, visibility.priority);
+                } else {
+                    label.style.removeProperty('visibility');
+                }
+            }
+            hiddenLabels.clear();
+        };
+
+        const hideOverlappingLabels = () => {
+            restoreLabels();
+
+            const tooltipElement = tooltip.label?.element;
+            if (!tooltipElement || tooltipElement.getAttribute('visibility') === 'hidden' ||
+                tooltipElement.getAttribute('opacity') === '0') return;
+
+            const tooltipRect = tooltipElement.getBoundingClientRect();
+            if (!tooltipRect.width || !tooltipRect.height) return;
+
+            for (const label of chart.container.querySelectorAll('.highcharts-plot-line-label')) {
+                const labelRect = label.getBoundingClientRect();
+                const overlaps = labelRect.width > 0 && labelRect.height > 0 &&
+                    labelRect.left < tooltipRect.right && labelRect.right > tooltipRect.left &&
+                    labelRect.top < tooltipRect.bottom && labelRect.bottom > tooltipRect.top;
+                if (!overlaps) continue;
+
+                hiddenLabels.set(label, {
+                    value: label.style.getPropertyValue('visibility'),
+                    priority: label.style.getPropertyPriority('visibility')
+                });
+                label.style.setProperty('visibility', 'hidden', 'important');
+            }
+        };
+
+        tooltip.refresh = function() {
+            const result = originalRefresh.apply(this, arguments);
+            hideOverlappingLabels();
+            requestAnimationFrame(hideOverlappingLabels);
+            return result;
+        };
+        tooltip.hide = function() {
+            try {
+                return originalHide.apply(this, arguments);
+            } finally {
+                restoreLabels();
+            }
+        };
+        tooltip._enhancerPlotLineCollisionSetup = true;
+        return true;
+    }
+
+    function addIconsToNativeMedalLabels(chart) {
+        let changed = false;
+        for (const axis of chart.yAxis || []) {
+            const plotLines = axis.options?.plotLines;
+            if (!Array.isArray(plotLines)) continue;
+
+            let axisChanged = false;
+            const updatedPlotLines = plotLines.map(plotLine => {
+                const label = plotLine.label;
+                if (!label || typeof label !== 'object') return plotLine;
+
+                const plainLabel = typeof label.text === 'string'
+                    ? getPlainHighchartsLabelText(label.text)
+                    : null;
+                const medalName = plainLabel && Object.keys(BLACK_MEDAL_REQUIREMENTS)
+                    .sort((a, b) => b.length - a.length)
+                    .find(name => getTierFromMedalLabel(plainLabel, name));
+                if (!medalName) return plotLine;
+
+                changed = true;
+                axisChanged = true;
+                const tier = getTierFromMedalLabel(plainLabel, medalName);
+                const recursionCount = tier === 'black'
+                    ? getRecursionCountFromLabel(plainLabel) ??
+                        getRecursionCountForValue(medalName, plotLine.value)
+                    : null;
+                return {
+                    ...plotLine,
+                    label: {
+                        ...label,
+                        text: `${getMedalImageHtml(medalName, tier, recursionCount)}${escapeHighchartsHtml(plainLabel)}`,
+                        useHTML: true
+                    }
+                };
+            });
+
+            if (axisChanged) {
+                axis.update({ plotLines: updatedPlotLines }, false);
+            }
+        }
+
+        return changed;
+    }
+
+    function setupHighchartsMedalIcons(chart) {
+        if (!chart || chart._enhancerMedalIconsSetup) return false;
+
+        const highcharts = (typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).Highcharts || window.Highcharts;
+        if (typeof highcharts?.numberFormat !== 'function' ||
+            typeof highcharts?.dateFormat !== 'function') return false;
+
+        chart.update({
+            legend: {
+                useHTML: true,
+                labelFormatter: function() {
+                    if (!this.name || this.options?.showInLegend === false) return escapeHighchartsHtml(this.name || '');
+                    const medalName = getHighchartsMedalName(this.name);
+                    const latestValue = getLatestSeriesValue(this);
+                    const tier = getMedalTierForValue(medalName, latestValue, this.yAxis);
+                    const recursionCount = tier === 'black'
+                        ? getRecursionCountForValue(medalName, latestValue)
+                        : null;
+                    const icon = tier ? getMedalImageHtml(medalName, tier, recursionCount) : '';
+                    return `${icon}${escapeHighchartsHtml(this.name)}`;
+                }
+            },
+            tooltip: {
+                useHTML: true,
+                formatter: function() {
+                    const points = this.points || [this];
+                    const timestamp = this.x;
+                    const date = highcharts.dateFormat('%Y-%m-%d', timestamp);
+                    const rows = points.map(point => {
+                        const medalName = getHighchartsMedalName(point.series.name);
+                        const tier = getMedalTierForValue(medalName, point.y, point.series.yAxis);
+                        const recursionCount = tier === 'black'
+                            ? getRecursionCountForValue(medalName, point.y)
+                            : null;
+                        const icon = tier ? getMedalImageHtml(medalName, tier, recursionCount) : '';
+                        return `${icon}<b>${escapeHighchartsHtml(point.series.name)}</b>: ` +
+                            `${highcharts.numberFormat(point.y, 0)}`;
+                    });
+                    return `<span>${date}</span><br>${rows.join('<br>')}`;
+                }
+            }
+        }, false);
+        addIconsToNativeMedalLabels(chart);
+        setupTooltipPlotLineLabelCollision(chart);
+        chart.redraw();
+        chart._enhancerMedalIconsSetup = true;
+        return true;
+    }
+
     function getLifetimeApPoints(series) {
         const rawPoints = series.options?.data?.length
             ? series.options.data
@@ -729,16 +1008,14 @@
             const requirement = getBlackRequirement(medalName);
             if (!requirement) continue;
 
-            // series.data only contains instantiated points and may be cropped or empty.
-            // options.data retains the complete source dataset (including [x, y] tuples).
-            const points = getMilestoneSeriesPoints(series);
-            if (!points.length) continue;
+            const extremes = axis.getExtremes?.();
+            const min = Number.isFinite(extremes?.min) ? extremes.min : axis.min;
+            const max = Number.isFinite(extremes?.max) ? extremes.max : axis.max;
+            if (!Number.isFinite(min) || !Number.isFinite(max)) continue;
 
-            const highestMultiple = Math.max(
-                2,
-                Math.floor(points[points.length - 1].y / requirement) + 1
-            );
-            for (let multiple = 2; multiple <= highestMultiple; multiple++) {
+            const firstVisibleMultiple = Math.max(2, Math.ceil(min / requirement));
+            const lastVisibleMultiple = Math.floor(max / requirement);
+            for (let multiple = firstVisibleMultiple; multiple <= lastVisibleMultiple; multiple++) {
                 const id = `${lineIdPrefix}${normalizeMedalName(medalName)}-${multiple}`;
                 milestones.set(id, { id, medalName, multiple, requirement });
             }
@@ -753,7 +1030,6 @@
             const existingLines = new Map(plotLines
                 .filter(line => line.options?.id?.startsWith(lineIdPrefix))
                 .map(line => [line.options.id, line.options]));
-            let highestMilestoneValue = -Infinity;
 
             for (const id of existingLines.keys()) {
                 if (!milestones.has(id)) {
@@ -765,7 +1041,6 @@
             for (const milestone of milestones.values()) {
                 const existing = existingLines.get(milestone.id);
                 const desiredValue = milestone.multiple * milestone.requirement;
-                highestMilestoneValue = Math.max(highestMilestoneValue, desiredValue);
                 if (existing && existing.value === desiredValue) continue;
                 if (existing) axis.removePlotLine(milestone.id);
 
@@ -776,7 +1051,7 @@
                     return options && !options.id?.startsWith(lineIdPrefix) &&
                         options.value === milestone.requirement &&
                         typeof labelText === 'string' &&
-                        normalizeMedalName(labelText).startsWith(`${medalName}black`);
+                        getTierFromMedalLabel(labelText, milestone.medalName) === 'black';
                 });
                 const styleLine = sourceLine || plotLines.find(line => {
                     const options = line.options;
@@ -785,10 +1060,12 @@
                 });
                 const sourceOptions = styleLine?.options || {};
                 const labelOptions = { ...(sourceOptions.label || {}) };
-                const existingLabel = sourceLine?.options?.label?.text;
-                labelOptions.text = typeof existingLabel === 'string' && /black/i.test(existingLabel)
-                    ? existingLabel.replace(/black/i, match => `${milestone.multiple}x ${match}`)
+                const existingLabel = getPlainHighchartsLabelText(sourceLine?.options?.label?.text);
+                labelOptions.text = typeof existingLabel === 'string' && /(?:black|onyx)/i.test(existingLabel)
+                    ? existingLabel.replace(/(?:black|onyx)/i, match => `${milestone.multiple}x ${match}`)
                     : `${milestone.medalName} ${milestone.multiple}x Black`;
+                labelOptions.text = `${getMedalImageHtml(milestone.medalName, 'black', milestone.multiple)}${escapeHighchartsHtml(labelOptions.text)}`;
+                labelOptions.useHTML = true;
                 delete labelOptions.formatter;
                 delete labelOptions.format;
 
@@ -801,27 +1078,6 @@
                     label: labelOptions,
                     zIndex: sourceOptions.zIndex ?? 3
                 });
-                changed = true;
-            }
-
-            // Plot lines outside the y-axis extremes are clipped. Extend an
-            // auto-scaled axis after Highcharts has recalculated its bounds.
-            const extremes = axis.getExtremes?.();
-            const enhancerMax = axis._enhancerMilestoneMax;
-            const hasUserMax = Number.isFinite(extremes?.userMax) &&
-                (!Number.isFinite(enhancerMax) || extremes.userMax !== enhancerMax);
-            if (chart._enhancerExtrapolationActive &&
-                Number.isFinite(highestMilestoneValue) && extremes &&
-                Number.isFinite(extremes.max) && !hasUserMax &&
-                highestMilestoneValue >= extremes.max && typeof axis.setExtremes === 'function') {
-                const min = Number.isFinite(extremes.min) ? extremes.min : 0;
-                const padding = Math.max(
-                    Math.abs(highestMilestoneValue - min) * 0.05,
-                    1
-                );
-                const expandedMax = highestMilestoneValue + padding;
-                axis.setExtremes(null, expandedMax, false, false);
-                axis._enhancerMilestoneMax = expandedMax;
                 changed = true;
             }
         }
@@ -1130,6 +1386,7 @@
 
         const chart = getHighchartsChart();
         if (chart) {
+            setupHighchartsMedalIcons(chart);
             removeUnusedMedalsFromHighcharts(chart);
             setupOnyxMilestoneEvents(chart);
             updateOnyxMilestoneLines(chart);
@@ -1164,6 +1421,7 @@
             chartPollCount++;
             const chart = getHighchartsChart();
             if (chart && chart.series && chart.series.length > 0) {
+                setupHighchartsMedalIcons(chart);
                 removeUnusedMedalsFromHighcharts(chart);
                 updateJustGainedAp(chart);
                 setupHighchartsExtrapolation();
