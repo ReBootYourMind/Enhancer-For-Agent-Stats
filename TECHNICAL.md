@@ -26,6 +26,8 @@ The prediction table is recalculated to find the earliest viable next milestone 
 
 The table also keeps row labels visible when horizontally scrolling so the leftmost metadata stays readable.
 
+Sortable prediction-table headers reorder the rows locally instead of requesting a new server-sorted page. This applies to native medal-prediction columns and the custom Black-multiple prediction column; switching back to a previously active native sort keeps its direction.
+
 ### Recursion-aware milestone logic
 
 The script estimates future medal thresholds using the selected graph time window or, if needed, the full dataset. This is used to project milestones such as:

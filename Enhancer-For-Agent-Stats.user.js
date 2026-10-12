@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Enhancer for Agent Stats
 // @namespace    http://tampermonkey.net/
-// @version      0.11
+// @version      0.12
 // @description  This fixes and enhances functionality of Agent Stats https://www.agent-stats.com/
 // @author       ReBootYourMind
 // @match        https://www.agent-stats.com/
@@ -73,6 +73,11 @@
         'Drone Sender': 1200,
         'Research Bounties': 5000,
         'Research Days': 360
+    };
+
+    const MEDAL_IMAGE_NAMES = {
+        missionday: 'missionday',
+        nl1331meetups: 'nl-1331-meetups'
     };
 
     function normalizeMedalName(name) {
@@ -232,7 +237,174 @@
         };
     }
 
+    function getNativePredictionSort() {
+        const url = new URL(window.location.href);
+        const rank = url.searchParams.get('sort_rank');
+        const rawOrder = url.searchParams.get('sort_order');
+        if (!rank || !rawOrder) return null;
+        return {
+            rank,
+            order: rawOrder.toLowerCase().includes('desc') ? 'desc' : 'asc'
+        };
+    }
+
+    function getHeaderColumnIndex(table, targetHeader) {
+        const occupied = [];
+        const headerRows = Array.from(table.querySelectorAll('thead tr'));
+
+        for (let rowIndex = 0; rowIndex < headerRows.length; rowIndex++) {
+            const row = headerRows[rowIndex];
+            occupied[rowIndex] = occupied[rowIndex] || [];
+            let columnIndex = 0;
+
+            for (const header of Array.from(row.cells)) {
+                while (occupied[rowIndex][columnIndex]) columnIndex++;
+
+                const startColumn = columnIndex;
+                const colSpan = Math.max(1, header.colSpan);
+                const rowSpan = Math.max(1, header.rowSpan);
+                for (let rowOffset = 0; rowOffset < rowSpan; rowOffset++) {
+                    const targetRow = rowIndex + rowOffset;
+                    occupied[targetRow] = occupied[targetRow] || [];
+                    for (let columnOffset = 0; columnOffset < colSpan; columnOffset++) {
+                        occupied[targetRow][startColumn + columnOffset] = true;
+                    }
+                }
+
+                if (header === targetHeader) {
+                    return colSpan === 1 ? startColumn : null;
+                }
+                columnIndex += colSpan;
+            }
+        }
+        return null;
+    }
+
+    function getPredictionSortKey(cell) {
+        const text = cell.innerText.trim();
+        const dateMatch = text.match(/\b(\d{4}-\d{2}-\d{2})\b/);
+        const shortMatch = text.match(/([\d,]+)\s+short/i);
+        if (dateMatch) {
+            return {
+                missing: false,
+                date: dateMatch[1],
+                numeric: shortMatch ? parseFloat(shortMatch[1].replace(/,/g, '')) : null,
+                text: ''
+            };
+        }
+
+        const numericText = text.replace(/,/g, '').trim();
+        const numeric = numericText !== '' ? Number(numericText) : NaN;
+        if (Number.isFinite(numeric)) {
+            return { missing: false, date: null, numeric, text: '' };
+        }
+        if (shortMatch) {
+            return {
+                missing: false,
+                date: null,
+                numeric: parseFloat(shortMatch[1].replace(/,/g, '')),
+                text: ''
+            };
+        }
+        if (!text || /^n\/a$/i.test(text)) {
+            return { missing: true, date: null, numeric: null, text: '' };
+        }
+        return { missing: false, date: null, numeric: null, text: text.toLowerCase() };
+    }
+
+    function sortPredictionTable(table, columnIndex, order, activeHeader) {
+        table.querySelectorAll('thead th .enhancer-sort-arrow').forEach(arrow => {
+            arrow.textContent = '';
+        });
+
+        let arrow = activeHeader.querySelector('.enhancer-sort-arrow');
+        if (!arrow) {
+            arrow = document.createElement('span');
+            arrow.className = 'enhancer-sort-arrow';
+            arrow.style.marginLeft = '4px';
+            arrow.style.fontSize = '13px';
+            arrow.style.userSelect = 'none';
+            activeHeader.appendChild(arrow);
+        }
+        arrow.textContent = order === 'asc' ? '↑' : '↓';
+
+        for (const tbody of table.querySelectorAll('tbody')) {
+            const rows = Array.from(tbody.querySelectorAll('tr')).filter(row => {
+                return !row.querySelector('th') && row.cells.length >= 11 && row.cells.length > columnIndex;
+            });
+            const keys = new Map(rows.map(row => [row, getPredictionSortKey(row.cells[columnIndex])]));
+            rows.sort((rowA, rowB) => {
+                const keyA = keys.get(rowA);
+                const keyB = keys.get(rowB);
+                if (keyA.missing || keyB.missing) {
+                    if (keyA.missing !== keyB.missing) return keyA.missing ? 1 : -1;
+                    return 0;
+                }
+
+                let result = 0;
+                if (keyA.date !== null || keyB.date !== null) {
+                    result = keyA.date === null ? 1 : keyB.date === null ? -1 : keyA.date.localeCompare(keyB.date);
+                    if (result === 0 && Number.isFinite(keyA.numeric) && Number.isFinite(keyB.numeric)) {
+                        result = keyA.numeric - keyB.numeric;
+                    }
+                } else if (Number.isFinite(keyA.numeric) && Number.isFinite(keyB.numeric)) {
+                    result = keyA.numeric - keyB.numeric;
+                } else {
+                    result = keyA.text.localeCompare(keyB.text);
+                }
+                return order === 'asc' ? result : -result;
+            });
+            rows.forEach(row => tbody.appendChild(row));
+        }
+
+        highlightNextMedals(table);
+    }
+
+    function bindLocalPredictionSorting(table) {
+        if (table._enhancerLocalSortBound) return;
+        table._enhancerLocalSortBound = true;
+        table._enhancerSortState = {
+            mode: getNativePredictionSort() ? 'native' : 'none',
+            nativeSort: getNativePredictionSort()
+        };
+
+        table.addEventListener('click', event => {
+            const target = event.target;
+            const anchor = target instanceof Element ? target.closest('a[href]') : null;
+            if (!anchor || !table.contains(anchor) || anchor.closest('th[data-enhancer-col]')) return;
+
+            const header = anchor.closest('th');
+            if (!header) return;
+            const destination = new URL(anchor.href, window.location.href);
+            const rank = destination.searchParams.get('sort_rank');
+            const requestedOrder = destination.searchParams.get('sort_order');
+            if (!rank || !requestedOrder || destination.origin !== window.location.origin) return;
+
+            const columnIndex = getHeaderColumnIndex(table, header);
+            if (columnIndex === null) return;
+
+            const state = table._enhancerSortState;
+            let order;
+            if (state.mode === 'recursion' && state.nativeSort?.rank === rank) {
+                order = state.nativeSort.order;
+            } else if (state.mode === 'native' && state.nativeSort?.rank === rank) {
+                order = state.nativeSort.order === 'asc' ? 'desc' : 'asc';
+            } else {
+                order = requestedOrder.toLowerCase().includes('desc') ? 'desc' : 'asc';
+            }
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            state.mode = 'native';
+            state.nativeSort = { rank, order };
+            sortPredictionTable(table, columnIndex, order, header);
+        }, true);
+    }
+
     function toggleRecursionSort(table, th) {
+        if (!table._enhancerSortState) bindLocalPredictionSorting(table);
+        table._enhancerSortState.mode = 'recursion';
+
         const columnKey = th.dataset.enhancerCol;
         const currentOrder = th.dataset.sortOrder;
         const newOrder = currentOrder === 'asc' ? 'desc' : 'asc';
@@ -332,6 +504,7 @@
 
     function addRecursionPredictionColumn(table) {
         if (!table) return false;
+        bindLocalPredictionSorting(table);
 
         const theadRows = Array.from(table.querySelectorAll('thead tr'));
         if (!theadRows.length) return false;
@@ -609,9 +782,10 @@
     }
 
     function getMedalImageHtml(medalName, tier = 'bronze', recursionCount = null) {
-        const imageName = medalName.toLowerCase().trim()
-            .replace(/\s+/g, '_')
-            .replace(/[^a-z0-9_-]/g, '');
+        const imageName = MEDAL_IMAGE_NAMES[normalizeMedalName(medalName)] ||
+            medalName.toLowerCase().trim()
+                .replace(/\s+/g, '_')
+                .replace(/[^a-z0-9_-]/g, '');
         if (!imageName) return '';
 
         if (tier === 'black' && Number.isInteger(recursionCount) && recursionCount >= 2) {
@@ -679,6 +853,12 @@
     }
 
     function getMedalTierForValue(medalName, value, axis) {
+        if (normalizeMedalName(medalName) === 'recursions') {
+            if (value === null || value === undefined || value === '' ||
+                !Number.isFinite(Number(value))) return null;
+            return Number(value) >= 1 ? 'bronze' : null;
+        }
+
         if (!getBlackRequirement(medalName) || value === null || value === undefined ||
             value === '' || !Number.isFinite(Number(value))) return null;
 
@@ -702,6 +882,100 @@
 
     function getHighchartsMedalName(seriesName) {
         return seriesName.split('(@')[0].trim();
+    }
+
+    function synchronizeHighchartsMedalColors(chart) {
+        if (!chart?.series || !chart.yAxis) return false;
+
+        let changed = false;
+        const styledAxes = new Set();
+
+        for (const series of chart.series) {
+            if (!series?.name || series.options?.showInLegend === false) continue;
+
+            const medalName = getHighchartsMedalName(series.name);
+            const axis = series.yAxis;
+            if (!getBlackRequirement(medalName) || !axis || !series.color) continue;
+
+            if (!styledAxes.has(axis)) {
+                styledAxes.add(axis);
+                const titleStyle = axis.options?.title?.style || {};
+                const labelStyle = axis.options?.labels?.style || {};
+                const plotLines = axis.options?.plotLines;
+                let plotLinesChanged = false;
+                const updatedPlotLines = Array.isArray(plotLines)
+                    ? plotLines.map(plotLine => {
+                        const tier = getTierFromMedalLabel(plotLine.label?.text, medalName);
+                        if (!tier) return plotLine;
+
+                        const plotLineLabelStyle = plotLine.label.style || {};
+                        if (plotLine.color === series.color &&
+                            plotLineLabelStyle.color === series.color) return plotLine;
+
+                        plotLinesChanged = true;
+                        return {
+                            ...plotLine,
+                            color: series.color,
+                            label: {
+                                ...plotLine.label,
+                                style: { ...plotLineLabelStyle, color: series.color }
+                            }
+                        };
+                    })
+                    : plotLines;
+
+                if (titleStyle.color !== series.color || labelStyle.color !== series.color ||
+                    plotLinesChanged) {
+                    const axisOptions = {
+                        title: { style: { ...titleStyle, color: series.color } },
+                        labels: { style: { ...labelStyle, color: series.color } }
+                    };
+                    if (plotLinesChanged) axisOptions.plotLines = updatedPlotLines;
+                    axis.update(axisOptions, false);
+                    changed = true;
+                }
+            }
+
+            const extrapolationName = series.name.replace(/\)$/, ' extrapolation)');
+            const extrapolation = chart.series.find(candidate => {
+                return candidate?.name?.toLowerCase() === extrapolationName.toLowerCase();
+            });
+            if (extrapolation && extrapolation.color !== series.color) {
+                extrapolation.update({ color: series.color }, false);
+                changed = true;
+            }
+        }
+
+        if (changed) chart.redraw();
+        return changed;
+    }
+
+    function setupHighchartsTooltipWidth(chart) {
+        const tooltip = chart?.tooltip;
+        if (!tooltip || tooltip._enhancerWidthSetup || typeof tooltip.refresh !== 'function') return false;
+
+        const originalRefresh = tooltip.refresh;
+        const setTooltipWidth = () => {
+            const tooltipElement = tooltip.label?.div;
+            if (!(tooltipElement instanceof HTMLElement)) return;
+
+            for (const element of [tooltipElement, tooltipElement.firstElementChild]) {
+                if (!(element instanceof HTMLElement)) continue;
+                element.style.setProperty('width', '320px', 'important');
+                element.style.setProperty('min-width', '320px', 'important');
+                element.style.setProperty('max-width', 'none', 'important');
+                element.style.setProperty('box-sizing', 'border-box', 'important');
+            }
+        };
+
+        tooltip.refresh = function() {
+            const result = originalRefresh.apply(this, arguments);
+            setTooltipWidth();
+            requestAnimationFrame(setTooltipWidth);
+            return result;
+        };
+        tooltip._enhancerWidthSetup = true;
+        return true;
     }
 
     function setupTooltipPlotLineLabelCollision(chart) {
@@ -854,6 +1128,7 @@
             }
         }, false);
         addIconsToNativeMedalLabels(chart);
+        setupHighchartsTooltipWidth(chart);
         setupTooltipPlotLineLabelCollision(chart);
         chart.redraw();
         chart._enhancerMedalIconsSetup = true;
@@ -1041,10 +1316,6 @@
             for (const milestone of milestones.values()) {
                 const existing = existingLines.get(milestone.id);
                 const desiredValue = milestone.multiple * milestone.requirement;
-                if (existing && existing.value === desiredValue) continue;
-                if (existing) axis.removePlotLine(milestone.id);
-
-                const medalName = normalizeMedalName(milestone.medalName);
                 const sourceLine = plotLines.find(line => {
                     const options = line.options;
                     const labelText = options?.label?.text;
@@ -1059,6 +1330,12 @@
                         options.value === milestone.requirement;
                 });
                 const sourceOptions = styleLine?.options || {};
+                const desiredLabelColor = sourceOptions.label?.style?.color;
+                if (existing && existing.value === desiredValue &&
+                    existing.color === sourceOptions.color &&
+                    existing.label?.style?.color === desiredLabelColor) continue;
+                if (existing) axis.removePlotLine(milestone.id);
+
                 const labelOptions = { ...(sourceOptions.label || {}) };
                 const existingLabel = getPlainHighchartsLabelText(sourceLine?.options?.label?.text);
                 labelOptions.text = typeof existingLabel === 'string' && /(?:black|onyx)/i.test(existingLabel)
@@ -1387,6 +1664,7 @@
 
         const chart = getHighchartsChart();
         if (chart) {
+            synchronizeHighchartsMedalColors(chart);
             setupHighchartsMedalIcons(chart);
             removeUnusedMedalsFromHighcharts(chart);
             setupOnyxMilestoneEvents(chart);

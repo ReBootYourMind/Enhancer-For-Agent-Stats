@@ -3,6 +3,10 @@
         "/^node --check \\.\\\\Enhancer-For-Agent-Stats\\.user\\.js$/": {
             "approve": true,
             "matchCommandLine": true
+        },
+        "/^node --check Enhancer-For-Agent-Stats\\.user\\.js$/": {
+            "approve": true,
+            "matchCommandLine": true
         }
     }
 }

@@ -6,7 +6,7 @@ A cleaner, smarter Agent Stats experience for players who want better medal trac
 
 - Clear next-medal tracking and prediction
 - Better Black/Onyx recursion milestone visibility
-- Cleaner comparison tables and more consistent sorting
+- Faster local sorting for medal predictions and cleaner comparison tables
 - Easier-to-read charts, icons, and tooltips
 - Accurate AP gain calculations across recursion resets
 
@@ -30,6 +30,14 @@ If the installation page does not open automatically, copy the raw script URL fr
 - [Project TODO](./TODO.md)
 
 # Version History
+
+## 0.12
+
+- Added faster local sorting for the prediction table for all medal tiers.
+- Fixed medals icons for medals that had inconsistent names.
+- Fixed prediction table sorting when switching between recursed medals and other medals.
+- Fixed bug from the original agent-stats site where some medals lacked labels and consistent colors on the highchart graph.
+
 
 ## 0.11
 

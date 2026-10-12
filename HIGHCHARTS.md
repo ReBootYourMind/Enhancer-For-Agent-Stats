@@ -156,17 +156,22 @@ In [`Enhancer-For-Agent-Stats.user.js`](Enhancer-For-Agent-Stats.user.js):
 
 ### TODO #11: Add Medal Icons to Highcharts [Completed]
 - **Legend**: A medal series displays the icon for the highest tier reached by its latest data point. Each comparison series is evaluated independently, and a value at or above Black/Onyx (including further recursion multiples) continues to use the Black icon.
-- **Tooltip**: Each medal point uses its own y-value and axis tier thresholds, so historical points and extrapolated predictions show the tier reached at that point. Recursed Black/Onyx icons use the prediction table's `recursion-frame` and `badge` styling. The graph frame is 28px square with its 18px medal centered inside, keeping the medal the same size as other graph icons; an explicit yellow bubble displays the achieved multiple from 2x onward, including in Highcharts HTML labels and tooltips. Non-medal series remain text-only.
+- **Tooltip**: Each medal point uses its own y-value and axis tier thresholds, so historical points and extrapolated predictions show the tier reached at that point. Recursed Black/Onyx icons use the prediction table's `recursion-frame` and `badge` styling. The graph frame is 28px square with its 18px medal centered inside, keeping the medal the same size as other graph icons; an explicit yellow bubble displays the achieved multiple from 2x onward, including in Highcharts HTML labels and tooltips. The rendered HTML tooltip wrapper and its content are fixed at 320px wide so the size is consistent across snapshots and leaves room for medal icons and series text. Non-medal series remain text-only.
 - **Milestone Labels**: Native Bronze, Silver, Gold, Platinum, and Black/Onyx plot-line labels use the corresponding medal-tier icon. Generated recursive Black/Onyx guide labels use the Black icon. Since Highcharts renders `useHTML` plot-line labels in an HTML overlay that can cover the SVG tooltip regardless of the label's configured z-index, the enhancer temporarily hides only labels overlapping the visible tooltip and restores them when the tooltip closes. HTML labels omit the unsupported `alt` attribute to avoid Highcharts' invalid-attribute warning.
+- Medal icon filenames use the site's canonical asset names for Mission Day (`missionday`) and NL-1331 Meetups (`nl-1331-meetups`), including generated recursive guide labels.
+
+### TODO #18: Add Recursion Medal Icon to Highcharts [Completed]
+- The `recursions` series uses `/img/recursions-bronze.png` when its point value is at least 1. This applies independently to each agent's legend icon (latest value) and tooltip icons (the hovered point's value); zero or missing values remain text-only.
 
 ### TODO #7: Remove Old Unused Medals from Highcharts [Completed in v0.8]
 - **Implementation**: [`removeUnusedMedalsFromHighcharts(chart)`](Enhancer-For-Agent-Stats.user.js) iterates backwards through `chart.series` and calls `serie.remove(false)` for any series matching `isUnusedMedal(name)`.
 - **Pairing Guarantee**: Because each unused medal is removed along with its paired extrapolation series (both sharing the same medal prefix before `(`), the sequential $2n / 2n+1$ pairing for all remaining medals is strictly preserved.
 - **Triggering**: Executed immediately on chart discovery, polled during page load for asynchronous chart initialization, and verified before any extrapolation calculations.
 
-### TODO #8: Fix Medals Not Getting a Label When Selected on Highcharts
-- **Context**: Certain series or points on the graph fail to show labels/tooltips when clicked or hovered.
-- **Approach**: Investigate series `dataLabels` and tooltip formatters (`chart.options.tooltip.formatter` or `series.options.tooltip`) to ensure all series have consistent label mappings.
+### TODO #8: Fix Medals Not Getting a Label When Selected on Highcharts [Completed]
+- **Cause**: Some medal y-axis titles and tick labels, starting with Reclaimer, were styled with a color that blended into the chart background. Their extrapolation series could also have a color that did not match the corresponding medal.
+- **Implementation**: `synchronizeHighchartsMedalColors(chart)` matches each medal's axis to its base series color and applies that color to the axis title, tick labels, native tier plot lines and their labels, and matching extrapolation series. Generated recursive dashed guide lines are recreated when their line or label color differs from the native Black/Onyx guide. It runs during chart setup and polling, and redraws only when a color needs correction.
+- **Scope**: The synchronization applies to every medal with a known requirement, including Reclaimer and medals after it, rather than relying on a fixed medal position in the series list.
 
 ### TODO #9: Make Medal Selection Better on Highcharts
 - **Context**: Highcharts legend with dozens of medals is cluttered, requiring scrolling or multiple clicks.
