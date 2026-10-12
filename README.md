@@ -3,7 +3,16 @@ This fixes and enhances functionality of Agent Stats https://www.agent-stats.com
 
 # Installation
 
-To use this javascript install Tampermonkey or a similar tool to your browser and intall the Enhancer-For-Agent-Stats.user.js script into it.
+1. Install a userscript manager for your browser:
+   - [Tampermonkey](https://www.tampermonkey.net/)
+   - [Violentmonkey](https://violentmonkey.github.io/get-it/)
+2. Open the [raw Enhancer-For-Agent-Stats.user.js script](https://raw.githubusercontent.com/ReBootYourMind/Enhancer-For-Agent-Stats/main/Enhancer-For-Agent-Stats.user.js).
+3. Your userscript manager should show an installation page. Select **Install** to add the script.
+4. If you are using Chrome make sure you have Developer mode turned on from the [Extension page](chrome://extensions/) 
+5. From the same Extensions page open details of the userscript manager extension and enable "Allow User Scripts" toggle.
+6. Open or refresh [Agent Stats](https://www.agent-stats.com/) to use the enhancements.
+
+If the installation page does not open automatically, copy the raw script URL from step 2 and add it as a new script in your userscript manager.
 
 # Functionality 
 
