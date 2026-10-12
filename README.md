@@ -1,52 +1,33 @@
 # Enhancer-For-Agent-Stats
-This fixes and enhances functionality of Agent Stats https://www.agent-stats.com/ 
 
-# Installation
+A cleaner, smarter Agent Stats experience for players who want better medal tracking, clearer recursion data, and easier-to-read charts.
+
+## Features
+
+- Clear next-medal tracking and prediction
+- Better Black/Onyx recursion milestone visibility
+- Cleaner comparison tables and more consistent sorting
+- Easier-to-read charts, icons, and tooltips
+- Accurate AP gain calculations across recursion resets
+
+## Installation
 
 1. Install a userscript manager for your browser:
    - [Tampermonkey](https://www.tampermonkey.net/)
    - [Violentmonkey](https://violentmonkey.github.io/get-it/)
 2. Open the [raw Enhancer-For-Agent-Stats.user.js script](https://raw.githubusercontent.com/ReBootYourMind/Enhancer-For-Agent-Stats/main/Enhancer-For-Agent-Stats.user.js).
 3. Your userscript manager should show an installation page. Select **Install** to add the script.
-4. If you are using Chrome make sure you have Developer mode turned on from the [Extension page](chrome://extensions/) 
-5. From the same Extensions page open details of the userscript manager extension and enable "Allow User Scripts" toggle.
+4. If you are using Chrome, make sure Developer mode is turned on from the [Extension page](chrome://extensions/).
+5. From the same extensions page, open the userscript manager and enable **Allow User Scripts**.
 6. Open or refresh [Agent Stats](https://www.agent-stats.com/) to use the enhancements.
 
 If the installation page does not open automatically, copy the raw script URL from step 2 and add it as a new script in your userscript manager.
 
-# Functionality 
+## Documentation
 
-- **Prediction Table Highlighting**: Fixes next medal prediction highlighting on `table#predictionTable` by identifying the single earliest upcoming medal for each medal tier column, while correctly handling recursion badges, missing projections, and `N/A` values.
-- **Recursion Black Medal Predictions**: Adds a new column to the prediction table calculating when the next multiple of a black medal (black with recursion-frame) will be earned, and highlights the earliest upcoming recursion medal.
-- **Client-Side Recursion Sorting**: Clicking the header image of the Recursion Prediction Column sorts rows in ascending order (earliest projected date first), and clicking again switches to descending order (and back), with an active sort indicator arrow (`↑` or `↓`).
-- **Comparison Table Support**: Applies prediction highlighting and adds an independently calculated and sortable recursion prediction column for each agent when comparing stats. The label for each row will stick to the left edge of the screen.
-- **Remove Expired Event Medals**: Automatically removes deprecated and expired event medals (`cryptic_memories_op`, `operation_chronos`, `prime_challenge`) from the prediction table and the Highcharts graph.
-- **Highcharts Recursed Medal Guides**: Displays labeled dashed guides for recursed medal thresholds that fit within the current graph y-axis range. Guides do not expand the axis.
-- **Highcharts Medal Icons**: Displays each medal's currently achieved tier icon beside its graph legend (using each agent's own latest value on comparison charts) and the tier reached at each hovered data point, including extrapolated points. Black icons show a recursion frame and count from the relevant value (or milestone multiple), while values below 2x Black retain the standard icon. Native Bronze-through-Black/Onyx guide labels and generated recursion milestones use the matching medal-tier icon.
-- **Recursion-Safe AP Gain**: Calculates each agent's "just gained" AP from the latest two lifetime AP points and "every diff" AP from the selected Highcharts time window, so recursion resets do not produce negative gains.
-
-# TODO:
-
-1. [x] Fix recursion medal breaking next medal highlighting
-2. [x] Add new medal tier for Onyx with wings
-3. [x] Add new medal tier for Onyx with multiple wings
-4. [x] Make prediction table highlights match the site style
-5. [x] Remove old unused medals from prediction table
-6. [x] Add functionality to extrapolate onyx with multiple wings in the Highcharts graphs
-7. [x] Remove old unused medals from highcharts
-8. [ ] Fix some medals not getting a label when selected on highcharts
-9. [ ] Make medal selection better on highcharts
-10. [x] Change unavailable recursion predictions from "-" to "N/A"
-11. [x] Add medal icons into the Highcharts graph axis, mouse over and labels.
-12. [x] Change @match so that script runs when comparing stats with another player and make sure everything still works.
-13. [x] Add horizontal lines to the Highchart graph for extrapolated onyxes
-14. [x] Change "just gained" numbers to calculate from all time ap so they work even when recursed. (to avoid gaining negative AP)
-15. [ ] Find a proper place and add "copy scanner link" for other agents. This is to open their profile ingame. For example this should work at the sharelist and when comparing with an agent.
-16. [x] Make it so that when the prediction table is too wide for the screen the labels for each row are always still visible when scrolling to the right.
-17. [ ] Fix switching from recursed sorting back to whatever sorting you had before that. Currently the site "toggles" that sorting instead of turning it back on.
-18. [ ] Add recursion medal image for the graph recursion `/img/recursions-bronze.png` It has just one level.
-19. [ ] Make readme feature list easier to read, Technical details can be somewhere else. The top of the readme should be like an ad for the project.
-20. [ ] Move todos away from the readme file.
+- [Technical details](./TECHNICAL.md)
+- [Highcharts notes](./HIGHCHARTS.md)
+- [Project TODO](./TODO.md)
 
 # Version History
 
