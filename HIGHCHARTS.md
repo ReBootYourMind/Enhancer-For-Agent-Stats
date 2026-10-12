@@ -1,6 +1,6 @@
 # Highcharts Architecture & Interoperability Notes
 
-This document details the reverse-engineered structure and behavior of Highcharts on [Agent Stats](https://www.agent-stats.com/). Use this as a technical reference when maintaining or implementing graph-related enhancements (e.g. TODOs #6, #7, #8, and #9).
+This document details the reverse-engineered structure and behavior of Highcharts on [Agent Stats](https://www.agent-stats.com/). Use this as a technical reference when maintaining or implementing graph-related enhancements (e.g. TODOs #6, #7, #8, #9, and #13).
 
 ---
 
@@ -141,6 +141,14 @@ In [`Enhancer-For-Agent-Stats.user.js`](Enhancer-For-Agent-Stats.user.js):
      - Calculates the slope from the active time window.
      - Calls `serie.setData([pCurrent, pTarget], false)`.
    - The original `extrapolate()` loop then marks `serie.setVisible(true, false)` and calls `chart.redraw()`.
+3. **Adding Recursed-Medal Guide Lines**:
+   - Adds dashed horizontal y-axis plot lines at each recursed multiple from 2x through the next multiple above the highest current value for that medal. A 2x line is added even if the medal has not yet reached 1x Black.
+   - Lines are keyed by normalized medal name and multiple, so comparison charts get one shared guide line per milestone rather than duplicate lines per player.
+   - When available, the line copies the native 1x Black plot line's styling and label format (for example, `explorer black` becomes `explorer 2x black`). Otherwise it uses a dashed line and a generated label.
+   - The native plot lines are available on each axis's `plotLinesAndBands`; generated lines are added and removed through `axis.addPlotLine()` and `axis.removePlotLine()`. A private ID prefix keeps enhancer-owned lines separate from site lines. Use each series's assigned `series.yAxis`, not an assumed first axis.
+   - `series.data` is not a complete source of medal history: Highcharts only instantiates points as needed and can crop points outside the current view. The enhancer therefore reads the full `series.options.data` first (including `[x, y]` tuples), falling back to instantiated points only when source data is unavailable.
+   - Highcharts clips a plot line when its value is outside the y-axis extremes, and plot lines do not themselves expand those extremes. The enhancer expands an auto-scaled y-axis only while extrapolation is active, slightly above the highest generated guide so the next milestone can be seen. It saves the original user-selected extremes and restores them on `unextrapolate()`; auto-scaled axes are returned to auto-scaling after extrapolated series are hidden. It does not override a maximum explicitly selected by the user.
+   - `updateOnyxMilestoneLines(chart)` runs when the chart is initialized and before extrapolation. It is also rescheduled after chart redraws and `afterSetExtremes`, because legend visibility and extrapolation change the active axis range. It redraws the chart after axis changes even if the plot-line definitions are unchanged, as Highcharts may otherwise leave newly in-range lines visually stale. Startup retries briefly after chart discovery because the chart instance can precede populated series data. It only derives guides from medal series currently visible in the legend, is idempotent, and removes lines for milestones no longer present.
 
 ---
 
@@ -159,3 +167,6 @@ In [`Enhancer-For-Agent-Stats.user.js`](Enhancer-For-Agent-Stats.user.js):
 - **Context**: Highcharts legend with dozens of medals is cluttered, requiring scrolling or multiple clicks.
 - **Approach**: Provide group selection controls (e.g. "Select All", "Deselect All", "Black Badges Only", "Badges in Progress") or a quick-search filter for graph series.
 
+### TODO #13: Add Horizontal Lines for Extrapolated Onyxes [Completed]
+- **Implementation**: [`updateOnyxMilestoneLines(chart)`](Enhancer-For-Agent-Stats.user.js) adds labeled horizontal guides for recursed medal multiples, styled from the site's corresponding 1x Black plot line when possible.
+- **Milestone Range**: Adds 2x through one multiple above the highest current value, with at least the 2x line when chart data is below 1x. The 1x line remains the site's existing line.

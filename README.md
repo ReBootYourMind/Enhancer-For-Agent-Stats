@@ -21,7 +21,7 @@ If the installation page does not open automatically, copy the raw script URL fr
 - **Client-Side Recursion Sorting**: Clicking the header image of the Recursion Prediction Column sorts rows in ascending order (earliest projected date first), and clicking again switches to descending order (and back), with an active sort indicator arrow (`↑` or `↓`).
 - **Comparison Table Support**: Applies prediction highlighting and adds an independently calculated and sortable recursion prediction column for each agent when comparing stats. The label for each row will stick to the left edge of the screen.
 - **Remove Expired Event Medals**: Automatically removes deprecated and expired event medals (`cryptic_memories_op`, `operation_chronos`, `prime_challenge`) from the prediction table and the Highcharts graph.
-- **Highcharts Multiple Onyx Extrapolations**: Extends the site's Highcharts graph extrapolation to calculate and display projections for multiples of Black/Onyx medals (e.g. 2x, 3x, etc.) based on user progress in the selected time window.
+- **Highcharts Multiple Onyx Extrapolations**: Extends the site's Highcharts graph extrapolation to calculate and display projections for multiples of Black/Onyx medals (e.g. 2x, 3x, etc.) based on user progress in the selected time window, with matching labeled horizontal guide lines.
 - **Recursion-Safe AP Gain**: Calculates each agent's "just gained" AP from the latest two lifetime AP points and "every diff" AP from the selected Highcharts time window, so recursion resets do not produce negative gains.
 
 # TODO:
@@ -38,12 +38,16 @@ If the installation page does not open automatically, copy the raw script URL fr
 10. [x] Change unavailable recursion predictions from "-" to "N/A"
 11. [ ] Add medal icons into the Highcharts graph axis, mouse over and labels.
 12. [x] Change @match so that script runs when comparing stats with another player and make sure everything still works.
-13. [ ] Add horizontal lines to the Highchart graph for extrapolated onyxes
+13. [x] Add horizontal lines to the Highchart graph for extrapolated onyxes
 14. [x] Change "just gained" numbers to calculate from all time ap so they work even when recursed. (to avoid gaining negative AP)
 15. [ ] Find a proper place and add "copy scanner link" for other agents. This is to open their profile ingame. For example this should work at the sharelist and when comparing with an agent.
 16. [x] Make it so that when the prediction table is too wide for the screen the labels for each row are always still visible when scrolling to the right.
 
 # Version History
+
+## 0.10
+
+- Added dashed, labeled Highcharts guide lines for earned and next Black/Onyx recursion multiples.
 
 ## 0.9
 

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Enhancer for Agent Stats
 // @namespace    http://tampermonkey.net/
-// @version      0.9
+// @version      0.10
 // @description  This fixes and enhances functionality of Agent Stats https://www.agent-stats.com/
 // @author       ReBootYourMind
 // @match        https://www.agent-stats.com/
@@ -686,11 +686,235 @@
         return removedAny;
     }
 
+    function getMilestoneSeriesPoints(series) {
+        const rawPoints = Array.isArray(series.options?.data) && series.options.data.length
+            ? series.options.data
+            : (series.data?.length ? series.data : series.points);
+        if (!Array.isArray(rawPoints)) return [];
+
+        return rawPoints.map((point, index) => {
+            let x;
+            let y;
+            if (Array.isArray(point)) {
+                x = point.length > 1 ? Number(point[0]) : index;
+                y = Number(point.length > 1 ? point[1] : point[0]);
+            } else if (typeof point === 'number') {
+                x = index;
+                y = point;
+            } else {
+                x = Number(point?.x ?? point?.options?.x ?? index);
+                y = Number(point?.y ?? point?.options?.y);
+            }
+            return { x, y, index };
+        }).filter(point => Number.isFinite(point.y))
+            .sort((a, b) => a.x - b.x || a.index - b.index);
+    }
+
+    function updateOnyxMilestoneLines(chart) {
+        if (!chart?.yAxis?.length) return false;
+
+        const lineIdPrefix = 'enhancer-recursed-onyx-';
+        const milestonesByAxis = new Map(chart.yAxis.map(axis => [axis, new Map()]));
+
+        for (const series of chart.series) {
+            if (!series || series.visible === false ||
+                series.options?.showInLegend === false || !series.name) continue;
+
+            const axis = series.yAxis || chart.yAxis[0];
+            if (!axis?.addPlotLine || !axis.removePlotLine) continue;
+            if (!milestonesByAxis.has(axis)) milestonesByAxis.set(axis, new Map());
+            const milestones = milestonesByAxis.get(axis);
+
+            const medalName = series.name.split('(')[0].trim();
+            const requirement = getBlackRequirement(medalName);
+            if (!requirement) continue;
+
+            // series.data only contains instantiated points and may be cropped or empty.
+            // options.data retains the complete source dataset (including [x, y] tuples).
+            const points = getMilestoneSeriesPoints(series);
+            if (!points.length) continue;
+
+            const highestMultiple = Math.max(
+                2,
+                Math.floor(points[points.length - 1].y / requirement) + 1
+            );
+            for (let multiple = 2; multiple <= highestMultiple; multiple++) {
+                const id = `${lineIdPrefix}${normalizeMedalName(medalName)}-${multiple}`;
+                milestones.set(id, { id, medalName, multiple, requirement });
+            }
+        }
+
+        let changed = false;
+
+        for (const [axis, milestones] of milestonesByAxis) {
+            if (!axis?.addPlotLine || !axis.removePlotLine) continue;
+
+            const plotLines = axis.plotLinesAndBands || [];
+            const existingLines = new Map(plotLines
+                .filter(line => line.options?.id?.startsWith(lineIdPrefix))
+                .map(line => [line.options.id, line.options]));
+            let highestMilestoneValue = -Infinity;
+
+            for (const id of existingLines.keys()) {
+                if (!milestones.has(id)) {
+                    axis.removePlotLine(id);
+                    changed = true;
+                }
+            }
+
+            for (const milestone of milestones.values()) {
+                const existing = existingLines.get(milestone.id);
+                const desiredValue = milestone.multiple * milestone.requirement;
+                highestMilestoneValue = Math.max(highestMilestoneValue, desiredValue);
+                if (existing && existing.value === desiredValue) continue;
+                if (existing) axis.removePlotLine(milestone.id);
+
+                const medalName = normalizeMedalName(milestone.medalName);
+                const sourceLine = plotLines.find(line => {
+                    const options = line.options;
+                    const labelText = options?.label?.text;
+                    return options && !options.id?.startsWith(lineIdPrefix) &&
+                        options.value === milestone.requirement &&
+                        typeof labelText === 'string' &&
+                        normalizeMedalName(labelText).startsWith(`${medalName}black`);
+                });
+                const styleLine = sourceLine || plotLines.find(line => {
+                    const options = line.options;
+                    return options && !options.id?.startsWith(lineIdPrefix) &&
+                        options.value === milestone.requirement;
+                });
+                const sourceOptions = styleLine?.options || {};
+                const labelOptions = { ...(sourceOptions.label || {}) };
+                const existingLabel = sourceLine?.options?.label?.text;
+                labelOptions.text = typeof existingLabel === 'string' && /black/i.test(existingLabel)
+                    ? existingLabel.replace(/black/i, match => `${milestone.multiple}x ${match}`)
+                    : `${milestone.medalName} ${milestone.multiple}x Black`;
+                delete labelOptions.formatter;
+                delete labelOptions.format;
+
+                axis.addPlotLine({
+                    ...sourceOptions,
+                    id: milestone.id,
+                    value: desiredValue,
+                    dashStyle: 'Dash',
+                    width: sourceOptions.width || 1,
+                    label: labelOptions,
+                    zIndex: sourceOptions.zIndex ?? 3
+                });
+                changed = true;
+            }
+
+            // Plot lines outside the y-axis extremes are clipped. Extend an
+            // auto-scaled axis after Highcharts has recalculated its bounds.
+            const extremes = axis.getExtremes?.();
+            const enhancerMax = axis._enhancerMilestoneMax;
+            const hasUserMax = Number.isFinite(extremes?.userMax) &&
+                (!Number.isFinite(enhancerMax) || extremes.userMax !== enhancerMax);
+            if (chart._enhancerExtrapolationActive &&
+                Number.isFinite(highestMilestoneValue) && extremes &&
+                Number.isFinite(extremes.max) && !hasUserMax &&
+                highestMilestoneValue >= extremes.max && typeof axis.setExtremes === 'function') {
+                const min = Number.isFinite(extremes.min) ? extremes.min : 0;
+                const padding = Math.max(
+                    Math.abs(highestMilestoneValue - min) * 0.05,
+                    1
+                );
+                const expandedMax = highestMilestoneValue + padding;
+                axis.setExtremes(null, expandedMax, false, false);
+                axis._enhancerMilestoneMax = expandedMax;
+                changed = true;
+            }
+        }
+
+        if (changed) {
+            chart._enhancerMilestoneRedraw = true;
+            try {
+                chart.redraw();
+            } finally {
+                chart._enhancerMilestoneRedraw = false;
+            }
+        }
+        return changed;
+    }
+
+    function beginOnyxExtrapolation(chart = getHighchartsChart()) {
+        if (!chart) return false;
+
+        if (!chart._enhancerExtrapolationActive) {
+            chart._enhancerExtrapolationActive = true;
+            chart._enhancerOriginalAxisRanges = new Map(
+                (chart.yAxis || []).map(axis => {
+                    const extremes = axis.getExtremes?.() || {};
+                    return [axis, {
+                        userMin: Number.isFinite(extremes.userMin) ? extremes.userMin : null,
+                        userMax: Number.isFinite(extremes.userMax) ? extremes.userMax : null
+                    }];
+                })
+            );
+        }
+
+        return true;
+    }
+
+    function endOnyxExtrapolation(chart = getHighchartsChart()) {
+        if (!chart) return false;
+
+        chart._enhancerExtrapolationActive = false;
+        const originalRanges = chart._enhancerOriginalAxisRanges;
+        chart._enhancerOriginalAxisRanges = null;
+        if (!(originalRanges instanceof Map)) return false;
+
+        let restored = false;
+        for (const [axis, range] of originalRanges) {
+            if (!axis || typeof axis.setExtremes !== 'function') continue;
+            axis.setExtremes(range.userMin, range.userMax, false, false);
+            delete axis._enhancerMilestoneMax;
+            restored = true;
+        }
+        return restored;
+    }
+
+    function setupOnyxMilestoneEvents(chart) {
+        if (!chart || chart._enhancerMilestoneEventsBound) return false;
+
+        const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        const highcharts = win.Highcharts || window.Highcharts;
+        if (typeof highcharts?.addEvent !== 'function') return false;
+
+        const scheduleUpdate = () => {
+            if (chart._enhancerMilestoneRedraw) return;
+            if (chart._enhancerMilestoneUpdateScheduled) return;
+            chart._enhancerMilestoneUpdateScheduled = true;
+            setTimeout(() => {
+                chart._enhancerMilestoneUpdateScheduled = false;
+                if (!chart.destroyed) {
+                    const changed = updateOnyxMilestoneLines(chart);
+                    if (!changed) {
+                        chart._enhancerMilestoneRedraw = true;
+                        try {
+                            chart.redraw();
+                        } finally {
+                            chart._enhancerMilestoneRedraw = false;
+                        }
+                    }
+                }
+            }, 0);
+        };
+
+        highcharts.addEvent(chart, 'redraw', scheduleUpdate);
+        for (const axis of chart.yAxis || []) {
+            highcharts.addEvent(axis, 'afterSetExtremes', scheduleUpdate);
+        }
+        chart._enhancerMilestoneEventsBound = true;
+        return true;
+    }
+
     function updateOnyxExtrapolations() {
         const chart = getHighchartsChart();
         if (!chart || !chart.series) return false;
 
         removeUnusedMedalsFromHighcharts(chart);
+        updateOnyxMilestoneLines(chart);
 
         const extremes = chart.xAxis && chart.xAxis[0] ? chart.xAxis[0].getExtremes() : null;
         const min = extremes ? extremes.min : -Infinity;
@@ -786,6 +1010,7 @@
                 const origExtrapolate = win.extrapolate;
                 const hookedFn = function() {
                     try {
+                        beginOnyxExtrapolation();
                         updateOnyxExtrapolations();
                     } catch (err) {
                         console.error('Enhancer error updating onyx extrapolations:', err);
@@ -794,6 +1019,24 @@
                 };
                 hookedFn._enhancerHooked = true;
                 win.extrapolate = hookedFn;
+                return true;
+            }
+            return false;
+        }
+
+        function hookUnextrapolateFn() {
+            if (typeof win.unextrapolate === 'function' && !win.unextrapolate._enhancerHooked) {
+                const origUnextrapolate = win.unextrapolate;
+                const hookedFn = function() {
+                    try {
+                        endOnyxExtrapolation();
+                    } catch (err) {
+                        console.error('Enhancer error restoring the original graph axis:', err);
+                    }
+                    return origUnextrapolate.apply(this, arguments);
+                };
+                hookedFn._enhancerHooked = true;
+                win.unextrapolate = hookedFn;
                 return true;
             }
             return false;
@@ -814,9 +1057,39 @@
                     if (typeof fn === 'function' && !fn._enhancerHooked) {
                         currentFn = function() {
                             try {
+                                beginOnyxExtrapolation();
                                 updateOnyxExtrapolations();
                             } catch (err) {
                                 console.error('Enhancer error in extrapolate:', err);
+                            }
+                            return fn.apply(this, arguments);
+                        };
+                        currentFn._enhancerHooked = true;
+                    } else {
+                        currentFn = fn;
+                    }
+                }
+            });
+            hooked = true;
+        }
+        if (hookUnextrapolateFn()) {
+            hooked = true;
+        } else if (!win._enhancerUnextrapolateDefined) {
+            win._enhancerUnextrapolateDefined = true;
+            let currentFn = win.unextrapolate;
+            Object.defineProperty(win, 'unextrapolate', {
+                configurable: true,
+                enumerable: true,
+                get() {
+                    return currentFn;
+                },
+                set(fn) {
+                    if (typeof fn === 'function' && !fn._enhancerHooked) {
+                        currentFn = function() {
+                            try {
+                                endOnyxExtrapolation();
+                            } catch (err) {
+                                console.error('Enhancer error restoring the original graph axis:', err);
                             }
                             return fn.apply(this, arguments);
                         };
@@ -834,9 +1107,22 @@
             btn._enhancerBound = true;
             btn.addEventListener('click', () => {
                 try {
+                    beginOnyxExtrapolation();
                     updateOnyxExtrapolations();
                 } catch (err) {
                     console.error('Enhancer error on extrapolate click:', err);
+                }
+            }, true);
+            hooked = true;
+        }
+        const unextrapolateBtn = document.getElementById('unextrapolate');
+        if (unextrapolateBtn && !unextrapolateBtn._enhancerBound) {
+            unextrapolateBtn._enhancerBound = true;
+            unextrapolateBtn.addEventListener('click', () => {
+                try {
+                    endOnyxExtrapolation();
+                } catch (err) {
+                    console.error('Enhancer error restoring the original graph axis:', err);
                 }
             }, true);
             hooked = true;
@@ -845,6 +1131,8 @@
         const chart = getHighchartsChart();
         if (chart) {
             removeUnusedMedalsFromHighcharts(chart);
+            setupOnyxMilestoneEvents(chart);
+            updateOnyxMilestoneLines(chart);
         }
 
         return hooked;
@@ -879,8 +1167,11 @@
                 removeUnusedMedalsFromHighcharts(chart);
                 updateJustGainedAp(chart);
                 setupHighchartsExtrapolation();
-                clearInterval(chartPollTimer);
-            } else if (chartPollCount >= 20) {
+            }
+            // A chart instance can exist before its series have populated their full
+            // options.data/points arrays. Keep retrying briefly instead of treating a
+            // non-empty series list as proof that the chart is fully initialized.
+            if (chartPollCount >= 20) {
                 clearInterval(chartPollTimer);
             }
         }, 300);
@@ -905,4 +1196,3 @@
         init();
     }
 })();
-
