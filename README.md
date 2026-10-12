@@ -31,7 +31,7 @@ If the installation page does not open automatically, copy the raw script URL fr
 
 # Version History
 
-## 0.12
+## 0.12 (13.10.2026)
 
 - Added faster local sorting for the prediction table for all medal tiers.
 - Fixed medals icons for medals that had inconsistent names.
@@ -39,53 +39,53 @@ If the installation page does not open automatically, copy the raw script URL fr
 - Fixed bug from the original agent-stats site where some medals lacked labels and consistent colors on the highchart graph.
 
 
-## 0.11
+## 0.11 (12.10.2026)
 
 - Shows recursed-medal guide lines when a visible extrapolation reaches those milestones.
 - Shows every recursed medal guide within the current y-axis range without expanding the axis.
 - Added medal icons to highcharts graph.
 
-## 0.10
+## 0.10 (12.10.2026)
 
 - Added dashed, labeled Highcharts guide lines for earned and next Black/Onyx recursion multiples.
 
-## 0.9
+## 0.9 (12.10.2026)
 
 - Recalculated each agent's "just gained" AP from their latest lifetime AP history and "every diff" AP from the selected graph time window, including on comparison pages.
 - Added support for agent comparisons.
 - Prediction tables first column will stick to the left edge of the screen if the table is scrolled to the right
 
-## 0.8
+## 0.8 (08.10.2026)
 
 - Removed expired and unused event medals (`cryptic_memories_op`, `operation_chronos`, `prime_challenge`) from the Highcharts graph and legend.
 
-## 0.7
+## 0.7 (08.10.2026)
 
 - Added support for multiple Black/Onyx extrapolations in the Highcharts graphs, projecting upcoming multiples (2x, 3x, etc.) based on user activity within the selected time window.
 
-## 0.6
+## 0.6 (08.10.2026)
 
 - Removed expired and unused event medals (`cryptic_memories_op`, `operation_chronos`, `prime_challenge`) from the prediction table.
 
-## 0.5
+## 0.5 (08.10.2026)
 
 - Updated prediction table highlights to match the native site style (`class="highlight"`) instead of custom inline styles.
 - Ensured any previous or server-rendered highlights are cleared when recalculating earliest upcoming medals.
 
-## 0.4
+## 0.4 (28.09.2026)
 
 - Added client-side sorting for the Recursion Prediction Column, toggling between ascending and descending order on header click, with active sort arrow indicators.
 - Fixed sort indicator arrow positioning and cell containment so arrows stay neatly inside the header cell without overlapping table borders.
 
-## 0.3
+## 0.3 (28.09.2026)
 
 - Added a new prediction table column for predicting when the next multiple of a black medal (recursion frame) will be collected.
 - Integrated recursion column into the earliest-medal highlighter so the next achievable recursion medal is automatically highlighted.
 
-## 0.2
+## 0.2 (21.09.2026)
 
 - Implemented next predicted medal highlighting logic on the prediction table, handling recursions and "N/A" values.
 
-## 0.1
+## 0.1 (21.09.2026)
 
 - Initial version with no functionality to make sure the js is being loaded properly.
