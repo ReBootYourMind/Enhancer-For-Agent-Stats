@@ -1066,6 +1066,7 @@
                     : `${milestone.medalName} ${milestone.multiple}x Black`;
                 labelOptions.text = `${getMedalImageHtml(milestone.medalName, 'black', milestone.multiple)}${escapeHighchartsHtml(labelOptions.text)}`;
                 labelOptions.useHTML = true;
+                labelOptions.y = (Number.isFinite(labelOptions.y) ? labelOptions.y : 0) - 8;
                 delete labelOptions.formatter;
                 delete labelOptions.format;
 
