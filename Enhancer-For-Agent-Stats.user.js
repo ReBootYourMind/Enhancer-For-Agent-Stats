@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Enhancer for Agent Stats
-// @namespace    http://tampermonkey.net/
+// @namespace    https://github.com/ReBootYourMind
 // @version      0.12
 // @description  This fixes and enhances functionality of Agent Stats https://www.agent-stats.com/
 // @author       ReBootYourMind
@@ -1422,15 +1422,7 @@
             setTimeout(() => {
                 chart._enhancerMilestoneUpdateScheduled = false;
                 if (!chart.destroyed) {
-                    const changed = updateOnyxMilestoneLines(chart);
-                    if (!changed) {
-                        chart._enhancerMilestoneRedraw = true;
-                        try {
-                            chart.redraw();
-                        } finally {
-                            chart._enhancerMilestoneRedraw = false;
-                        }
-                    }
+                    updateOnyxMilestoneLines(chart);
                 }
             }, 0);
         };
