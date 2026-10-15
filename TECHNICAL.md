@@ -16,7 +16,7 @@ The script runs client-side against the live Agent Stats pages and augments the 
 
 ### Prediction table enhancements
 
-The prediction table is recalculated to find the earliest viable next milestone for each medal tier. This logic handles:
+The prediction table is recalculated to find the earliest dated medal milestone with positive reported progress for each tier and agent. Each tier is evaluated independently, so an upcoming lower tier does not prevent a higher-tier prediction from being considered. This logic handles:
 
 - normal medal progressions
 - Black/Onyx recursion multiples
@@ -26,7 +26,7 @@ The prediction table is recalculated to find the earliest viable next milestone 
 
 The table also keeps row labels visible when horizontally scrolling so the leftmost metadata stays readable.
 
-Sortable prediction-table headers reorder the rows locally instead of requesting a new server-sorted page. This applies to native medal-prediction columns and the custom Black-multiple prediction column; switching back to a previously active native sort keeps its direction.
+Sortable prediction-table headers reorder the rows locally instead of requesting a new server-sorted page. This applies to native medal-prediction columns and the custom Black-multiple prediction column. For native medal predictions, selecting a different agent or tier starts ascending; clicking the same agent-and-tier header again reverses the sort.
 
 ### Recursion-aware milestone logic
 

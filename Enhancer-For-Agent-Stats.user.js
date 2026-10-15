@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Enhancer for Agent Stats
 // @namespace    https://github.com/ReBootYourMind
-// @version      0.12
+// @version      1.00
 // @description  This fixes and enhances functionality of Agent Stats https://www.agent-stats.com/
 // @author       ReBootYourMind
 // @match        https://www.agent-stats.com/
@@ -122,11 +122,11 @@
 
         return {
             playerCount,
-            latestIndex: player => 1 + player * 5,
-            diffIndex: player => 2 + player * 5,
-            weekIndex: player => 3 + player * 5,
-            monthIndex: player => 4 + player * 5,
-            totalIndex: player => 5 + player * 5,
+            latestIndex: player => 1 + player,
+            diffIndex: player => 1 + playerCount + player,
+            weekIndex: player => 1 + playerCount * 2 + player,
+            monthIndex: player => 1 + playerCount * 3 + player,
+            totalIndex: player => 1 + playerCount * 4 + player,
             medalIndex: (player, tier) => 1 + playerCount * 5 + tier * playerCount + player
         };
     }
@@ -244,6 +244,7 @@
         if (!rank || !rawOrder) return null;
         return {
             rank,
+            user: url.searchParams.get('sort_user'),
             order: rawOrder.toLowerCase().includes('desc') ? 'desc' : 'asc'
         };
     }
@@ -377,6 +378,7 @@
             if (!header) return;
             const destination = new URL(anchor.href, window.location.href);
             const rank = destination.searchParams.get('sort_rank');
+            const user = destination.searchParams.get('sort_user');
             const requestedOrder = destination.searchParams.get('sort_order');
             if (!rank || !requestedOrder || destination.origin !== window.location.origin) return;
 
@@ -384,19 +386,15 @@
             if (columnIndex === null) return;
 
             const state = table._enhancerSortState;
-            let order;
-            if (state.mode === 'recursion' && state.nativeSort?.rank === rank) {
-                order = state.nativeSort.order;
-            } else if (state.mode === 'native' && state.nativeSort?.rank === rank) {
-                order = state.nativeSort.order === 'asc' ? 'desc' : 'asc';
-            } else {
-                order = requestedOrder.toLowerCase().includes('desc') ? 'desc' : 'asc';
-            }
+            const sameHeader = state.mode === 'native' &&
+                state.nativeSort?.rank === rank &&
+                state.nativeSort?.user === user;
+            const order = sameHeader && state.nativeSort.order === 'asc' ? 'desc' : 'asc';
 
             event.preventDefault();
             event.stopImmediatePropagation();
             state.mode = 'native';
-            state.nativeSort = { rank, order };
+            state.nativeSort = { rank, user, order };
             sortPredictionTable(table, columnIndex, order, header);
         }, true);
     }
@@ -693,14 +691,15 @@
                 let targetCell = null;
 
                 for (const row of rows) {
-                    let allPreviousEarned = true;
-                    for (let previousTier = 0; previousTier < tier; previousTier++) {
-                        if (!row.cells[layout.medalIndex(player, previousTier)].querySelector('img')) {
-                            allPreviousEarned = false;
-                            break;
-                        }
-                    }
-                    if (!allPreviousEarned) continue;
+                    const hasPositiveProgress = [
+                        layout.diffIndex(player),
+                        layout.weekIndex(player),
+                        layout.monthIndex(player)
+                    ].some(index => {
+                        const value = parseFloat(row.cells[index].innerText.replace(/,/g, '').trim());
+                        return value > 0;
+                    });
+                    if (!hasPositiveProgress) continue;
 
                     const currentCell = row.cells[layout.medalIndex(player, tier)];
                     if (!currentCell || currentCell.querySelector('img')) continue;
@@ -1435,8 +1434,41 @@
         return true;
     }
 
-    function updateOnyxExtrapolations() {
-        const chart = getHighchartsChart();
+    function setupOnyxExtrapolationEvents(chart) {
+        if (!chart?.series || chart._enhancerOnyxExtrapolationEventsBound) return false;
+
+        const win = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+        const highcharts = win.Highcharts || window.Highcharts;
+        if (typeof highcharts?.addEvent !== 'function') return false;
+
+        for (const series of chart.series) {
+            if (!series?.name || series.options?.showInLegend === false ||
+                !getBlackRequirement(series.name.split('(')[0].trim())) continue;
+
+            highcharts.addEvent(series, 'show', () => {
+                if (!chart._enhancerExtrapolationActive ||
+                    chart._enhancerOnyxExtrapolationUpdateScheduled) return;
+
+                chart._enhancerOnyxExtrapolationUpdateScheduled = true;
+                setTimeout(() => {
+                    chart._enhancerOnyxExtrapolationUpdateScheduled = false;
+                    if (!chart.destroyed && chart._enhancerExtrapolationActive) {
+                        try {
+                            updateOnyxExtrapolations(chart);
+                            chart.redraw();
+                        } catch (err) {
+                            console.error('Enhancer error updating onyx extrapolations after medal selection:', err);
+                        }
+                    }
+                }, 0);
+            });
+        }
+
+        chart._enhancerOnyxExtrapolationEventsBound = true;
+        return true;
+    }
+
+    function updateOnyxExtrapolations(chart = getHighchartsChart()) {
         if (!chart || !chart.series) return false;
 
         removeUnusedMedalsFromHighcharts(chart);
@@ -1522,6 +1554,9 @@
                 { x: pCurrent.x, y: pCurrent.y, progress: "", period: "" },
                 { x: targetX, y: targetY, progress: "", period: "", name: `${nextMultiple}x Black` }
             ], false);
+            if (chart._enhancerExtrapolationActive && !serie.visible) {
+                serie.setVisible(true, false);
+            }
         }
 
         return true;
@@ -1660,6 +1695,7 @@
             setupHighchartsMedalIcons(chart);
             removeUnusedMedalsFromHighcharts(chart);
             setupOnyxMilestoneEvents(chart);
+            setupOnyxExtrapolationEvents(chart);
             updateOnyxMilestoneLines(chart);
         }
 

@@ -134,12 +134,14 @@ In [`Enhancer-For-Agent-Stats.user.js`](Enhancer-For-Agent-Stats.user.js):
    - Replaces `window.extrapolate` with a wrapper that calls `updateOnyxExtrapolations()` before running the original function.
    - Also attaches a capture-phase click listener to `<button id="extrapolate">` as a failsafe.
    - Uses an `Object.defineProperty` setter on `window.extrapolate` in case the site defines the function after the userscript initializes.
+   - While extrapolation is active, listens for a medal base series becoming visible and recalculates its custom projection. This covers medals selected from the legend after the toggle was pressed.
 2. **Injecting Multiple-Onyx Data**:
    - Inspects each visible base series.
    - For medals with an Onyx requirement where the player has reached or exceeded 1x Black ($y \ge \text{req}$), or where the server provided no extrapolation data (`extra.data.length === 0`):
      - Computes the next milestone ($(\lfloor y / \text{req} \rfloor + 1) \times \text{req}$).
      - Calculates the slope from the active time window.
      - Calls `serie.setData([pCurrent, pTarget], false)`.
+     - If the extrapolation toggle is already active, makes the newly populated paired series visible immediately.
    - The original `extrapolate()` loop then marks `serie.setVisible(true, false)` and calls `chart.redraw()`.
 3. **Adding Recursed-Medal Guide Lines**:
    - Adds dashed horizontal y-axis plot lines for every recursed milestone inside the current axis range for each visible medal series, whether or not extrapolation is active. A milestone outside the current range is omitted.

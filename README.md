@@ -31,6 +31,11 @@ If the installation page does not open automatically, copy the raw script URL fr
 
 # Version History
 
+## 1.00 (15.10.2026)
+
+- Fixed sorting switch when comparing and going between the same medal tier. Should now always apply ascending sort first.
+- Fixed extrapolation toggle not always being remembered.
+
 ## 0.12 (13.10.2026)
 
 - Added faster local sorting for the prediction table for all medal tiers.
