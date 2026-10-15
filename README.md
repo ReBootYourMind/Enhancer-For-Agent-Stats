@@ -35,6 +35,7 @@ If the installation page does not open automatically, copy the raw script URL fr
 
 - Fixed sorting switch when comparing and going between the same medal tier. Should now always apply ascending sort first.
 - Fixed extrapolation toggle not always being remembered.
+- Fixed highlight logic to ignore if previous tier has been unlocked.
 
 ## 0.12 (13.10.2026)
 
