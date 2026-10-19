@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Enhancer for Agent Stats
 // @namespace    https://github.com/ReBootYourMind
-// @version      1.00
+// @version      1.01
 // @description  This fixes and enhances functionality of Agent Stats https://www.agent-stats.com/
 // @author       ReBootYourMind
 // @match        https://www.agent-stats.com/
@@ -883,6 +883,27 @@
         return seriesName.split('(@')[0].trim();
     }
 
+    function getPreviousHighchartsPoint(series, point) {
+        if (!Number.isFinite(Number(point?.x))) return null;
+
+        const previousPoints = getMilestoneSeriesPoints(series)
+            .filter(candidate => candidate.x < Number(point.x));
+        return previousPoints.length ? previousPoints[previousPoints.length - 1] : null;
+    }
+
+    function formatHighchartsElapsedTime(milliseconds) {
+        const totalMinutes = Math.floor(milliseconds / 60000);
+        const days = Math.floor(totalMinutes / 1440);
+        const hours = Math.floor((totalMinutes % 1440) / 60);
+        const minutes = totalMinutes % 60;
+        const parts = [];
+
+        if (days) parts.push(`${days}d`);
+        if (hours) parts.push(`${hours}h`);
+        if (minutes || parts.length === 0) parts.push(`${minutes}m`);
+        return `(+${parts.join(' ')})`;
+    }
+
     function synchronizeHighchartsMedalColors(chart) {
         if (!chart?.series || !chart.yAxis) return false;
 
@@ -1112,6 +1133,12 @@
                     const points = this.points || [this];
                     const timestamp = this.x;
                     const date = highcharts.dateFormat('%Y-%m-%d', timestamp);
+                    const previousPoint = points
+                        .map(point => getPreviousHighchartsPoint(point.series, point))
+                        .find(candidate => candidate);
+                    const elapsedTime = previousPoint
+                        ? ` ${formatHighchartsElapsedTime(timestamp - previousPoint.x)}`
+                        : '';
                     const rows = points.map(point => {
                         const medalName = getHighchartsMedalName(point.series.name);
                         const tier = getMedalTierForValue(medalName, point.y, point.series.yAxis);
@@ -1119,10 +1146,19 @@
                             ? getRecursionCountForValue(medalName, point.y)
                             : null;
                         const icon = tier ? getMedalImageHtml(medalName, tier, recursionCount) : '';
-                        return `${icon}<b>${escapeHighchartsHtml(point.series.name)}</b>: ` +
-                            `${highcharts.numberFormat(point.y, 0)}`;
+                        const previous = getPreviousHighchartsPoint(point.series, point);
+                        const delta = previous ? Number(point.y) - previous.y : null;
+                        const deltaText = Number.isFinite(delta)
+                            ? ` (${delta >= 0 ? '+' : '-'}${highcharts.numberFormat(Math.abs(delta), 0)})`
+                            : '';
+                        const color = typeof point.color === 'string'
+                            ? point.color
+                            : typeof point.series.color === 'string' ? point.series.color : null;
+                        const row = `<b>${escapeHighchartsHtml(point.series.name)}</b>: ` +
+                            `${highcharts.numberFormat(point.y, 0)}${deltaText}`;
+                        return `${icon}${color ? `<span style="color:${escapeHighchartsHtml(color)}">${row}</span>` : row}`;
                     });
-                    return `<span>${date}</span><br>${rows.join('<br>')}`;
+                    return `<span>${date}${elapsedTime}</span><br>${rows.join('<br>')}`;
                 }
             }
         }, false);
